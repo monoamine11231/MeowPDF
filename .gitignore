@@ -1,0 +1,6 @@
+.vscode/
+C/
+
+# Added by cargo
+
+/target
