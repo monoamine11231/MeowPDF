@@ -1,6 +1,8 @@
 use std::io::{stdin, stdout, Read, Stdin, Stdout, Write};
 
 
+/* Should be executed only after uncooking the terminal. This method expects the
+ * terminal that a non-blocking and unbuffered read from stdin is possible */
 pub fn terminal_graphics_test_support() -> Result<(), &'static str> {
     let mut handle1: Stdout = stdout();
     print!("\x1B_Gi=31,s=1,v=1,a=q,t=d,f=24;AAAA\x1B\\\x1B[c");
