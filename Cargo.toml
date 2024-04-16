@@ -7,5 +7,5 @@ edition = "2021"
 
 [dependencies]
 mupdf = "0.4.2"
+nix = { version = "0.28.0", features = ["term", "ioctl"] }
 openssl = "0.10.64"
-termios = "0.3.3"

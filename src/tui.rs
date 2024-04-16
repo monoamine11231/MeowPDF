@@ -1,7 +1,6 @@
-use termios::*;
+use nix::sys::termios::*;
 use std::fs::File;
-use std::io::{stdout, stdin, Read, Write};
-use std::os::unix::io::AsRawFd;
+use std::io::{stdin, stdout, Read, Write};
 
 
 pub enum TerminalKey {
@@ -11,22 +10,26 @@ pub enum TerminalKey {
 }
 
 pub fn terminal_control_raw_mode() -> Result<Termios, &'static str> {
-    let tty_file: File = File::open("/dev/tty")
+    let tty_file_1: File = File::open("/dev/tty")
         .expect("Could not open /dev/tty.");
-    let tty_data_original: Termios = Termios::from_fd(tty_file.as_raw_fd())
+    let tty_data_original: Termios = tcgetattr(tty_file_1)
         .expect("Could not load `termios` struct from /dev/tty");
     
     
-    let mut tty_raw: Termios = tty_data_original;
-    tty_raw.c_lflag &= !(ECHO | ICANON | ISIG   | IEXTEN);
-    tty_raw.c_iflag &= !(IXON | ICRNL  | BRKINT | INPCK | ISTRIP);
-    tty_raw.c_oflag &= !(OPOST);
-    tty_raw.c_cflag |= CS8;
+    let mut tty_raw: Termios = tty_data_original.clone();
+    tty_raw.local_flags &= !(LocalFlags::ECHO | LocalFlags::ICANON |
+        LocalFlags::ISIG   | LocalFlags::IEXTEN);
+    tty_raw.input_flags &= !(InputFlags::IXON | InputFlags::ICRNL  |
+        InputFlags::BRKINT | InputFlags::INPCK | InputFlags::ISTRIP);
+    tty_raw.output_flags &= !(OutputFlags::OPOST);
+    tty_raw.control_flags |= ControlFlags::CS8;
     
-    tty_raw.c_cc[VTIME] = 1;
-    tty_raw.c_cc[VMIN] = 0;
+    tty_raw.control_chars[SpecialCharacterIndices::VTIME as usize] = 1;
+    tty_raw.control_chars[SpecialCharacterIndices::VMIN as usize] = 0;
 
-    tcsetattr(tty_file.as_raw_fd(), TCSAFLUSH, &tty_raw)
+    let tty_file_2: File = File::open("/dev/tty")
+        .expect("Could not open /dev/tty.");
+    tcsetattr(tty_file_2, SetArg::TCSAFLUSH, &tty_raw)
         .expect("Could not set `termios` struct to /dev/tty");
 
     print!("\x1B[?25l");
@@ -51,7 +54,7 @@ pub fn terminal_control_default_mode(tty: &Termios) -> Result<(), &'static str> 
 
     let tty_file: File = File::open("/dev/tty")
         .expect("Could not open /dev/tty.");
-    tcsetattr(tty_file.as_raw_fd(), TCSAFLUSH, tty)
+    tcsetattr(tty_file, SetArg::TCSAFLUSH, tty)
         .expect("Could not set `termios` struct to /dev/tty.");
 
     Ok(())
@@ -99,4 +102,10 @@ pub fn terminal_tui_has_key(key: &mut Option<TerminalKey>) -> Result<bool, &'sta
             return (*key).is_some();
         });
     res
+}
+
+pub fn terminal_tui_get_dimensions() -> Result<(u32, u32), &'static str> {
+    
+    
+    Ok((0,0))
 }

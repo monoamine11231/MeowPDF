@@ -4,24 +4,24 @@ use crate::tui::*;
 mod graphics;
 use crate::graphics::*;
 
-use std::io::Read;
-use std::{io::Write, io::stdout, io::stdin, io::Stdout, sync::Arc, thread, time::Duration};
-use termios::Termios;
+use std::ops::Deref;
+use std::{io::Write, io::stdout, io::Stdout, sync::Mutex, thread};
+use nix::libc;
+use nix::sys::termios::Termios;
 
 
 fn main() {
-    let tty_data_original: Arc<Termios> = Arc::new(
-        terminal_control_raw_mode()
-        .expect("Error when setting terminal to raw mode")
-    );
+    let tty_data_original_main: Termios = terminal_control_raw_mode()
+        .expect("Error when setting terminal to raw mode");
+    let tty_data_original_panic_hook: Mutex<Termios> = Mutex::from(tty_data_original_main.clone());
 
-    let tty_data_original_panic_hook: Arc<Termios> = tty_data_original.clone();
 
     let default_panic = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
+        let tty = tty_data_original_panic_hook.lock().unwrap();
         /* Atleast try to cook the terminal on error before printing the message. 
          * Do not handle the error to prevent possible infinite loops when panicking. */
-        let _ = terminal_control_default_mode(tty_data_original_panic_hook.as_ref());
+        let _ = terminal_control_default_mode(tty.deref());
         default_panic(info);
     }));
 
@@ -57,14 +57,15 @@ fn main() {
         while !terminal_tui_has_key(&mut key).unwrap() {}
     }
 
-    terminal_control_default_mode(&tty_data_original)
+    terminal_control_default_mode(&tty_data_original_main)
         .expect("Error when setting terminal to default mode");   
 }
 
 /* `true` indicates that the caller should exit *safely* the current process */
 fn handle_key(key: &Option<TerminalKey>) -> bool {
     let res: bool = match key {
-        Some(TerminalKey::CTRLC) | Some(TerminalKey::CTRLD) => true,
+        Some(TerminalKey::CTRLC) | Some(TerminalKey::CTRLD) |
+        Some(TerminalKey::KEY(b'q')) | Some(TerminalKey::KEY(b'Q')) => true,
         Some(_) | None => false
     };
     return res;
