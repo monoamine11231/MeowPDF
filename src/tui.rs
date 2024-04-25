@@ -1,8 +1,10 @@
 use nix::sys::termios::*;
+use nix::libc;
 use std::fs::File;
 use std::io::{stdin, stdout, Read, Write};
+use std::mem::MaybeUninit;
 
-
+#[derive(Clone, Copy)]
 pub enum TerminalKey {
     CTRLC,
     CTRLD,
@@ -73,39 +75,38 @@ pub fn terminal_tui_clear() -> Result<(), &'static str> {
     Ok(())
 }
 
-pub fn terminal_tui_get_key() -> Result<Option<TerminalKey>, &'static str> {
-    let mut buf: [u8;1] = [b'\0'];
+pub fn terminal_tui_key_iter() -> impl Iterator
+        <Item = Result<TerminalKey, std::io::Error>
+    > {
+    stdin().bytes().map(|x| {
+        let res: Result<TerminalKey, std::io::Error> = match x {
+            Ok(0x03) => Ok(TerminalKey::CTRLC),
+            Ok(0x04) => Ok(TerminalKey::CTRLD),
+            Ok(c) => Ok(TerminalKey::KEY(c)),
+            Err(x) => Err(x)
+        };
+        return res;
+    })
+}
 
-    let read: Result<usize, std::io::Error> = stdin().read(&mut buf);
-    if read.is_err() {
-        return Err("Could not read from stdin.");
+mod ioctl {
+    use nix::ioctl_read_bad;
+    use nix::libc;
+
+    ioctl_read_bad!(terminal_size, libc::TIOCGWINSZ, libc::winsize);
+}
+
+pub fn terminal_tui_get_dimensions() -> Result<libc::winsize, &'static str> {
+    let mut sz: libc::winsize;
+    let res: nix::Result<libc::c_int>;
+    unsafe {
+        sz = MaybeUninit::zeroed().assume_init();
+        res = ioctl::terminal_size(1, &mut sz);
     }
 
-    if read.is_ok_and(|x| x == 0) {
-        return Ok(None);
-    }
-
-    let key: Option<TerminalKey> = match buf[0] {
-        0x03 => Some(TerminalKey::CTRLC),
-        0x04 => Some(TerminalKey::CTRLD),
-        c => Some(TerminalKey::KEY(c))
+    let ret = match res {
+        Ok(_) => Ok(sz),
+        Err(_) => Err("Error when trying to fetch terminal size")
     };
-    Ok(key)
-}
-
-/* Read a key to `key` while at the same time returning a signal whether a key was
- * pressed or not */
-pub fn terminal_tui_has_key(key: &mut Option<TerminalKey>) -> Result<bool, &'static str>{
-    let res: Result<bool, &'static str> = terminal_tui_get_key()
-        .map(move |x| {
-            *key = x;
-            return (*key).is_some();
-        });
-    res
-}
-
-pub fn terminal_tui_get_dimensions() -> Result<(u32, u32), &'static str> {
-    
-    
-    Ok((0,0))
+    ret
 }
