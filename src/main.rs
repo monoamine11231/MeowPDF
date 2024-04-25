@@ -5,6 +5,8 @@ mod graphics;
 use crate::graphics::*;
 
 use std::ops::Deref;
+use std::sync::mpsc::channel;
+use std::time::Duration;
 use std::{io::Write, io::stdout, io::Stdout, sync::Mutex, thread};
 use nix::libc;
 use nix::sys::termios::Termios;
@@ -13,7 +15,8 @@ use nix::sys::termios::Termios;
 fn main() {
     let tty_data_original_main: Termios = terminal_control_raw_mode()
         .expect("Error when setting terminal to raw mode");
-    let tty_data_original_panic_hook: Mutex<Termios> = Mutex::from(tty_data_original_main.clone());
+    let tty_data_original_panic_hook: Mutex<Termios> = Mutex::from(
+        tty_data_original_main.clone());
 
 
     let default_panic = std::panic::take_hook();
@@ -25,6 +28,26 @@ fn main() {
         default_panic(info);
     }));
 
+
+    let (sender_winsize, receive_winsize) = channel::<libc::winsize>();
+    thread::spawn(move || {
+        let mut wz: libc::winsize = terminal_tui_get_dimensions().unwrap();
+        loop {
+            thread::sleep(Duration::from_millis(100));
+
+            let tmp: libc::winsize = terminal_tui_get_dimensions().unwrap();
+            if tmp == wz {
+                continue;
+            }
+
+            wz = tmp;
+            /* Notify that the terminal window has been changed */
+            sender_winsize
+                .send(wz)
+                .expect("Could not send a terminal window size change signal");
+        }
+    });
+
     terminal_tui_clear()
         .expect("Error when clearing the screen");
 
@@ -35,26 +58,43 @@ fn main() {
     handle.flush()
         .expect("Error when flushing stdout");
 
-    let mut key: Option<TerminalKey> = None;
-    let mut pressed_keys: i32 = 0;
+    let mut i = 0;
+
+    let mut key_iter = terminal_tui_key_iter().peekable();
+    let mut winsize_iter = receive_winsize.try_iter().peekable();
+
     loop {
         /* Break the loop if a CTRL-C or similar sigint signal was sent */
-        if handle_key(&key) {
-            break;
+        if key_iter.peek().is_some() {
+            let key = *key_iter.peek().unwrap().as_ref().unwrap();
+            if handle_key(key) {
+                break;
+            }
+            key_iter.next();
         }
+
+        /* Rerender on terminal window size change */
+        if winsize_iter.peek().is_some() {
+            winsize_iter.next();
+        }
+
 
         terminal_tui_clear()
             .expect("Error when clearing the screen");
+    
 
-            print!("\x1B[1;1H");
-        print!("# of pressed keys: {}", pressed_keys);
-        pressed_keys += 1;
+        print!("\x1B[1;1H");
+        print!("i {}",i);
+        i += 1;
 
         stdout()
             .flush()
             .expect("Could not flush stdout.");
 
-        while !terminal_tui_has_key(&mut key).unwrap() {}
+        while key_iter.peek().is_none() && winsize_iter.peek().is_none() {
+            winsize_iter.next();
+            key_iter.next();
+        }
     }
 
     terminal_control_default_mode(&tty_data_original_main)
@@ -62,11 +102,11 @@ fn main() {
 }
 
 /* `true` indicates that the caller should exit *safely* the current process */
-fn handle_key(key: &Option<TerminalKey>) -> bool {
+fn handle_key(key: TerminalKey) -> bool {
     let res: bool = match key {
-        Some(TerminalKey::CTRLC) | Some(TerminalKey::CTRLD) |
-        Some(TerminalKey::KEY(b'q')) | Some(TerminalKey::KEY(b'Q')) => true,
-        Some(_) | None => false
+        TerminalKey::CTRLC | TerminalKey::CTRLD |
+        TerminalKey::KEY(b'q') | TerminalKey::KEY(b'Q') => true,
+        _ => false
     };
     return res;
 }
