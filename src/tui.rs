@@ -4,11 +4,16 @@ use std::fs::File;
 use std::io::{stdin, stdout, Read, Write};
 use std::mem::MaybeUninit;
 
-#[derive(Clone, Copy)]
+
+#[derive(Debug, Clone, Copy)]
 pub enum TerminalKey {
+    UP,
+    LEFT,
+    RIGHT,
+    DOWN,
     CTRLC,
     CTRLD,
-    KEY(u8)    
+    OTHER(u8)    
 }
 
 pub fn terminal_control_raw_mode() -> Result<Termios, &'static str> {
@@ -75,16 +80,39 @@ pub fn terminal_tui_clear() -> Result<(), &'static str> {
     Ok(())
 }
 
-pub fn terminal_tui_key_iter() -> impl Iterator
-        <Item = Result<TerminalKey, std::io::Error>
-    > {
-    stdin().bytes().map(|x| {
-        let res: Result<TerminalKey, std::io::Error> = match x {
-            Ok(0x03) => Ok(TerminalKey::CTRLC),
-            Ok(0x04) => Ok(TerminalKey::CTRLD),
-            Ok(c) => Ok(TerminalKey::KEY(c)),
-            Err(x) => Err(x)
+pub fn terminal_tui_key_iter() -> impl Iterator<Item = TerminalKey> {
+    let mut escape: bool = false;
+    let mut window: Vec<u8> = Vec::new();
+    stdin().bytes().filter_map(move |x| {
+        let b: u8 = x.expect("Could not read a byte from stdin"); 
+
+        if !escape {
+            escape = b == b'\x1B';
+        }
+
+        window.push(b);
+        let res: Option<TerminalKey> = match window.as_slice() {
+            [b'\x03'] => Some(TerminalKey::CTRLC),
+            [b'\x04'] => Some(TerminalKey::CTRLD),
+
+            [b'\x1B', b'[', b'A'] => Some(TerminalKey::UP),
+            [b'\x1B', b'[', b'B'] => Some(TerminalKey::DOWN),
+            [b'\x1B', b'[', b'C'] => Some(TerminalKey::RIGHT),
+            [b'\x1B', b'[', b'D'] => Some(TerminalKey::LEFT),
+
+            c if !escape => Some(TerminalKey::OTHER(c[0])),           
+            _ => None
         };
+
+        if !escape {
+            window.clear();
+        }
+
+        if escape && res.is_some() {
+            escape = false;
+            window.clear();
+        }
+
         return res;
     })
 }
