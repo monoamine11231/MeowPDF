@@ -16,11 +16,11 @@ pub enum TerminalKey {
     OTHER(u8)    
 }
 
-pub fn terminal_control_raw_mode() -> Result<Termios, &'static str> {
+pub fn terminal_control_raw_mode() -> Result<Termios, String> {
     let tty_file_1: File = File::open("/dev/tty")
-        .expect("Could not open /dev/tty.");
+        .map_err(|x| format!("Could not open /dev/tty: {}", x))?;
     let tty_data_original: Termios = tcgetattr(tty_file_1)
-        .expect("Could not load `termios` struct from /dev/tty");
+        .map_err(|x| format!("Could not load `termios` struct from /dev/tty: {}", x))?;
     
     
     let mut tty_raw: Termios = tty_data_original.clone();
@@ -35,9 +35,9 @@ pub fn terminal_control_raw_mode() -> Result<Termios, &'static str> {
     tty_raw.control_chars[SpecialCharacterIndices::VMIN as usize] = 0;
 
     let tty_file_2: File = File::open("/dev/tty")
-        .expect("Could not open /dev/tty.");
+        .map_err(|x| format!("Could not open /dev/tty: {}",x))?;
     tcsetattr(tty_file_2, SetArg::TCSAFLUSH, &tty_raw)
-        .expect("Could not set `termios` struct to /dev/tty");
+        .map_err(|x| format!("Could not set `termios` struct to /dev/tty: {}",x))?;
 
     print!("\x1B[?25l");
     print!("\x1B[s");
@@ -45,38 +45,37 @@ pub fn terminal_control_raw_mode() -> Result<Termios, &'static str> {
     print!("\x1B[?1049h");
     stdout()
         .flush()
-        .expect("Could not flush stdout.");
+        .map_err(|x| format!("Could not flush stdout: {}",x))?;
     
     Ok(tty_data_original)
 }
 
-pub fn terminal_control_default_mode(tty: &Termios) -> Result<(), &'static str> {
+pub fn terminal_control_default_mode(tty: &Termios) -> Result<(), String> {
     print!("\x1B[?1049l");
     print!("\x1B[?47l");
     print!("\x1B[u");
     print!("\x1B[?25h");
     stdout()
         .flush()
-        .expect("Could not flush stdout.");
+        .map_err(|x| format!("Could not flush stdout: {}", x))?;
 
     let tty_file: File = File::open("/dev/tty")
-        .expect("Could not open /dev/tty.");
+        .map_err(|x| format!("Could not open /dev/tty: {}", x))?;
     tcsetattr(tty_file, SetArg::TCSAFLUSH, tty)
-        .expect("Could not set `termios` struct to /dev/tty.");
+        .map_err(|x| format!("Could not set `termios` struct to /dev/tty: {}", x))?;
 
     Ok(())
 }
 
 #[inline(always)]
-pub fn terminal_tui_clear() -> Result<(), &'static str> {
+pub fn terminal_tui_clear() -> Result<(), String> {
     /* Safely clear screen by moving cursor to 0,0 and then clearing the rest.
      * If \x1B[2J is used then a stack smashing error occurs when displaying an
      * image. Bug??? */
     print!("\x1B[s\x1B[1;1H\x1B[0J\x1B[u");
     stdout()
         .flush()
-        .expect("Could not flush stdout.");
-
+        .map_err(|x| format!("Could not flush stdout: {}", x))?;
     Ok(())
 }
 
@@ -124,7 +123,7 @@ mod ioctl {
     ioctl_read_bad!(terminal_size, libc::TIOCGWINSZ, libc::winsize);
 }
 
-pub fn terminal_tui_get_dimensions() -> Result<libc::winsize, &'static str> {
+pub fn terminal_tui_get_dimensions() -> Result<libc::winsize, String> {
     let mut sz: libc::winsize;
     let res: nix::Result<libc::c_int>;
     unsafe {
@@ -134,7 +133,7 @@ pub fn terminal_tui_get_dimensions() -> Result<libc::winsize, &'static str> {
 
     let ret = match res {
         Ok(_) => Ok(sz),
-        Err(_) => Err("Error when trying to fetch terminal size")
+        Err(x) => Err(format!("Error when trying to fetch terminal size: ERRNO {}", x))
     };
     ret
 }
