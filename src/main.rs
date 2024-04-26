@@ -4,6 +4,7 @@ use crate::tui::*;
 mod graphics;
 use crate::graphics::*;
 
+use std::collections::HashMap;
 use std::ops::Deref;
 use std::path::Path;
 use std::sync::mpsc::channel;
@@ -12,6 +13,7 @@ use std::{io::Write, io::stdout, sync::Mutex, thread};
 
 use nix::libc;
 use nix::sys::termios::Termios;
+use mupdf::{document::Document, Page};
 
 use notify::RecursiveMode;
 use notify::{Watcher, Result, event::{ModifyKind, DataChange}};
@@ -81,6 +83,12 @@ fn main() {
 
 
     /* ============================== Main program loop ============================== */
+    let file: String = std::env::args().nth(1)
+        .expect("No provided pdf!");
+
+    let mut app: AppState = AppState::init(file);
+
+
     terminal_tui_clear()
         .expect("Error when clearing the screen");
 
@@ -92,7 +100,7 @@ fn main() {
     loop {
         /* Break the loop if a CTRL-C or similar sigint signal was sent */
         if chan_has!(key_iter) {
-            let key = *key_iter.peek().unwrap().as_ref().unwrap();
+            let key: TerminalKey = **key_iter.peek().as_ref().unwrap();
             if handle_key(key) {
                 break;
             }
@@ -134,16 +142,43 @@ fn main() {
         .expect("Error when setting terminal to default mode");   
 }
 
+
 /* `true` indicates that the caller should exit *safely* the current process */
 fn handle_key(key: TerminalKey) -> bool {
     let res: bool = match key {
         TerminalKey::CTRLC | TerminalKey::CTRLD |
-        TerminalKey::KEY(b'q') | TerminalKey::KEY(b'Q') => true,
+        TerminalKey::OTHER(b'q') | TerminalKey::OTHER(b'Q') => true,
         _ => false
     };
     return res;
 }
 
+
+struct AppState {
+    file: String,
+    document: Document,
+    cache: HashMap<u32, Page>,
+    /* Offset is given in page width and page height units */
+    offset: (f32, f32)
+}
+
+impl AppState {
+    fn init(file: String) -> Self {
+        let document: Document = Document::open(file.as_str())
+            .expect("Could not open the given PDF file for reading");
+
+        if !document.is_pdf() {
+            panic!("The given PDF file is not a PDF!");
+        }
+
+        Self {
+            file: file,
+            document: document,
+            cache: HashMap::new(),
+            offset: (0.0f32, 0.0f32)
+        }
+    }
+}
 
 
 #[macro_export]
