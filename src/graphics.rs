@@ -1,4 +1,5 @@
 use std::io::{stdin, stdout, Read, Stdin, Stdout, Write};
+use regex::{Captures, Regex};
 
 
 /* Should be executed only after uncooking the terminal. This method expects the
@@ -49,3 +50,47 @@ pub fn terminal_graphics_apc_success() -> Result<(), String> {
     res
 }
 
+pub fn terminal_graphics_allocate_id() -> Result<usize, String> {
+    let mut handle1: Stdout = stdout();
+    let mut handle2: Stdin = stdin();
+    handle1.write("\x1B_Gf=24,I=1,t=d,v=1,s=1;AAAA\x1B\\".as_bytes())
+        .map_err(|x| format!("Could not write to stdout: {}",x))?;
+    handle1.flush()
+        .map_err(|x| format!("Could not flush stdout: {}",x))?;
+
+    let rekittymsg: Regex = Regex::new("i=(\\d+).*;([a-zA-Z]*)\x1B\\\\")
+        .map_err(|x| format!("Could not compile regex expression: {}",x))?;
+    
+    let mut reply: String = String::new();
+    handle2.read_to_string(&mut reply)
+        .map_err(|x| format!("Could not read from stdin: {}",x))?;
+    let reply_captures: Captures<'_> = rekittymsg.captures(reply.as_str())
+        .ok_or("Could not parse graphics responce from terminal".to_string())?;
+
+    let reply_status: &str = reply_captures.get(2)
+        .ok_or("Terminal replied with invalid responce to graphics query".to_string())?
+        .as_str();
+
+    if reply_status != "OK" {
+        Err(format!("Failed when trying to allocate graphics ID: {}",reply_status))?;
+    }
+
+    let reply_id: usize = reply_captures.get(1)
+        .ok_or("Terminal replied with invalid responce to graphics query".to_string())?
+        .as_str()
+        .parse::<usize>()
+        .map_err(|x| format!("Could not parse terminal generated graphics ID: {}",x))?;
+    
+    Ok(reply_id)
+}
+
+pub fn terminal_graphics_deallocate_id(id: usize) -> Result<(), String> {
+    let mut handle: Stdout = stdout();
+    handle
+        .write(format!("\x1B_Ga=d,d=I,i={};\x1B\\",id).as_bytes())
+        .map_err(|x| format!("Could not write to stdout: {}", x))?;
+
+    handle.flush()
+        .map_err(|x| format!("Could not flush stdout: {}",x))?;
+    Ok(())
+}

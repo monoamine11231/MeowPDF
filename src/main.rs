@@ -16,7 +16,7 @@ use nix::sys::termios::Termios;
 use mupdf::{document::Document, Page};
 
 use notify::RecursiveMode;
-use notify::{Watcher, Result, event::{ModifyKind, DataChange}};
+use notify::{Watcher, event::{ModifyKind, DataChange}};
 
 
 fn main() {
@@ -25,6 +25,9 @@ fn main() {
         .expect("Error when setting terminal to raw mode");
     let tty_data_original_panic_hook: Mutex<Termios> = Mutex::from(
         tty_data_original_main.clone());
+
+    terminal_tui_clear()
+        .expect("Error when clearing the screen");
 
     /* ========================== Cook the terminal on panic ========================= */
     let default_panic = std::panic::take_hook();
@@ -62,19 +65,21 @@ fn main() {
 
     /* ========================= Thread notifying file change ======================== */
     let (sender_file, receive_file) = channel::<bool>();
-    let mut watcher_file = notify::recommended_watcher(move|res: Result<notify::Event>| {
-        let event: notify::Event = res
-            .expect("Could not watch file changes for the given file");
-        
-        match event.kind {
-            notify::EventKind::Modify(ModifyKind::Data(DataChange::Any)) => {
-                sender_file
-                    .send(true)
-                    .expect("Could not send a file change signal");
-            },
-            _ => ()
+    let mut watcher_file = notify::recommended_watcher(
+        move|res: notify::Result<notify::Event>| {
+            let event: notify::Event = res
+                .expect("Could not watch file changes for the given file");
+            
+            match event.kind {
+                notify::EventKind::Modify(ModifyKind::Data(DataChange::Any)) => {
+                    sender_file
+                        .send(true)
+                        .expect("Could not send a file change signal");
+                },
+                _ => ()
+            }
         }
-    })
+    )
         .expect("Could not initialize a file watcher for the given file");
 
     watcher_file
@@ -86,11 +91,11 @@ fn main() {
     let file: String = std::env::args().nth(1)
         .expect("No provided pdf!");
 
-    let mut app: AppState = AppState::init(file);
+    let mut app: AppState = AppState::init(file)
+        .expect("Could not create the app state");
 
 
-    terminal_tui_clear()
-        .expect("Error when clearing the screen");
+
 
     let mut i = 0;
     let mut key_iter = terminal_tui_key_iter().peekable();
@@ -158,24 +163,42 @@ struct AppState {
     file: String,
     document: Document,
     cache: HashMap<u32, Page>,
+    /* Set of unique graphics IDs that are not used by other programs */
+    ids: Vec<usize>,
     /* Offset is given in page width and page height units */
     offset: (f32, f32)
 }
 
 impl AppState {
-    fn init(file: String) -> Self {
+    fn init(file: String) -> Result<Self, String> {
         let document: Document = Document::open(file.as_str())
-            .expect("Could not open the given PDF file for reading");
+            .map_err(|x| format!("Could not open the given PDF file: {}",x))?;
 
         if !document.is_pdf() {
-            panic!("The given PDF file is not a PDF!");
+            Err("The given PDF file is not a PDF!".to_string())?;
         }
 
-        Self {
+        let mut ids: Vec<usize> = Vec::new();
+        for _ in 0..=10 {
+            ids.push(terminal_graphics_allocate_id()?);
+        }
+
+        let app: AppState = Self {
             file: file,
             document: document,
             cache: HashMap::new(),
+            ids: ids,
             offset: (0.0f32, 0.0f32)
+        };
+        Ok(app)
+    }
+}
+
+impl Drop for AppState {
+    fn drop(&mut self) {
+        /* Remove the allocated graphics IDs when dropping the state */
+        for i in self.ids.iter() {
+            let _ = terminal_graphics_deallocate_id(*i);
         }
     }
 }
