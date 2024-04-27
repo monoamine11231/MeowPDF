@@ -9,3 +9,4 @@ edition = "2021"
 mupdf = "0.4.2"
 nix = { version = "0.28.0", features = ["term", "ioctl"] }
 notify = "6.1.1"
+regex = "1.10.4"
