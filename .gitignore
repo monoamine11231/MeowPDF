@@ -1,7 +1,7 @@
 .vscode/
 C/
 test.txt
-test.pdf
+test*.pdf
 
 # Added by cargo
 
