@@ -131,3 +131,50 @@ pub fn terminal_graphics_deallocate_id(id: usize) -> Result<(), String> {
         .map_err(|x| format!("Could not flush stdout: {}", x))?;
     Ok(())
 }
+
+pub fn terminal_graphics_transfer_rgba_bitmap(
+    id: usize,
+    width: usize,
+    height: usize,
+    data: &[u8],
+) -> Result<(), String> {
+    const CHUNK_SIZE: usize = 4096;
+
+    let mut handle: Stdout = stdout();
+    let encoded: String = STANDARD.encode(data);
+
+    let mut chunks: Peekable<Chunks<u8>> = encoded.as_bytes().chunks(CHUNK_SIZE).peekable();
+
+    /* First chunk with bitmap metadata */
+    write!(
+        handle,
+        "\x1B_Gf=32,i={},s={},v={},m={};{}\x1B\\",
+        id,
+        width,
+        height,
+        (encoded.len() > CHUNK_SIZE) as i32,
+        str::from_utf8(chunks.next().ok_or("No data provided")?)
+            .map_err(|x| format!("Could not convert &[u8] to &str: {}", x))?
+    )
+    .map_err(|x| format!("Could not write to stdout: {}", x))?;
+
+    while chunks.peek().is_some() {
+        let data: &str = str::from_utf8(chunks.next().unwrap())
+            .map_err(|x| format!("Could not convert &[u8] to &str: {}", x))?;
+
+        write!(
+            handle,
+            "\x1B_Gm={};{}\x1B\\",
+            chunks.peek().is_some() as i32,
+            data
+        )
+        .map_err(|x| format!("Could not write to stdout: {}", x))?;
+    }
+
+    handle
+        .flush()
+        .map_err(|x| format!("Could not flush stdout: {}", x))?;
+
+    terminal_graphics_apc_success()?;
+    Ok(())
+}
