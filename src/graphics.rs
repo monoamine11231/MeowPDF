@@ -3,7 +3,6 @@ use regex::{Captures, Regex};
 use std::{
     io::{stdin, stdout, Read, Stdin, Stdout, Write},
     iter::Peekable,
-    ops::Deref,
     slice::Chunks,
     str,
     sync::OnceLock,
@@ -13,59 +12,26 @@ use std::{
  * terminal that a non-blocking and unbuffered read from stdin is possible */
 pub fn terminal_graphics_test_support() -> Result<(), String> {
     let mut handle1: Stdout = stdout();
-    print!("\x1B_Gi=31,s=1,v=1,a=q,t=d,f=24;AAAA\x1B\\\x1B[c");
+    print!("\x1B_Gi=31,s=1,v=1,a=q,t=d,f=24;AAAA\x1B\\");
     handle1
         .flush()
         .map_err(|x| format!("Could not flush stdout: {}", x))?;
 
-    let mut buf: Vec<u8> = Vec::new();
-    let mut handle2: Stdin = stdin();
-
-    handle2
-        .read_to_end(&mut buf)
-        .map_err(|x| format!("Could not read from stdin: {}", x))?;
-
-    let ind: Option<usize> = buf
-        .as_slice()
-        .windows(2)
-        .position(|window| window == [b'O', b'K']);
-
-    let res = match ind {
-        Some(_) => Ok(()),
-        None => Err("Terminal does not support Kitty graphics protocol.".to_string()),
-    };
-    res
+    terminal_graphics_apc_success()?;
+    Ok(())
 }
 
 pub fn terminal_graphics_apc_success() -> Result<(), String> {
-    static REKITTYMSG: OnceLock<Result<Regex, String>> = OnceLock::new();
-    let rekittymsg: Regex = REKITTYMSG
-        .get_or_init(|| {
-            return Regex::new(";([a-zA-Z]*)\x1B\\\\")
-                .map_err(|x| format!("Could not compile regex expression: {}", x));
-        })
-        .clone()?;
-
     let mut handle: Stdin = stdin();
     let mut reply: String = String::new();
     handle
         .read_to_string(&mut reply)
         .map_err(|x| format!("Could not read from stdin: {}", x))?;
-    let reply_captures: Captures<'_> = rekittymsg
-        .captures(reply.as_str())
-        .ok_or("Could not parse graphics responce from terminal".to_string())?;
-    let reply_status: &str = reply_captures
-        .get(1)
-        .ok_or("Terminal replied with invalid responce to graphics query".to_string())?
-        .as_str();
 
-    if reply_status != "OK" {
-        Err(format!(
-            "Failed when trying to allocate graphics ID: {}",
-            reply_status
-        ))?;
+    if !reply.contains(";OK\x1B\\") {
+        Err(format!("Graphics APC was not successful: {}", reply))?;
     }
-    
+
     Ok(())
 }
 
@@ -132,49 +98,94 @@ pub fn terminal_graphics_deallocate_id(id: usize) -> Result<(), String> {
     Ok(())
 }
 
-pub fn terminal_graphics_transfer_rgba_bitmap(
+pub fn terminal_graphics_transfer_bitmap(
     id: usize,
     width: usize,
     height: usize,
     data: &[u8],
+    alpha: bool,
 ) -> Result<(), String> {
     const CHUNK_SIZE: usize = 4096;
 
     let mut handle: Stdout = stdout();
     let encoded: String = STANDARD.encode(data);
 
-    let mut chunks: Peekable<Chunks<u8>> = encoded.as_bytes().chunks(CHUNK_SIZE).peekable();
+    let mut chunks: Peekable<Chunks<u8>> =
+        encoded.as_bytes().chunks(CHUNK_SIZE).peekable();
 
     /* First chunk with bitmap metadata */
     write!(
         handle,
-        "\x1B_Gf=32,i={},s={},v={},m={};{}\x1B\\",
+        "\x1B_Gf={},q=2,i={},s={},v={},m={};",
+        if alpha { 32 } else { 24 },
         id,
         width,
         height,
         (encoded.len() > CHUNK_SIZE) as i32,
-        str::from_utf8(chunks.next().ok_or("No data provided")?)
-            .map_err(|x| format!("Could not convert &[u8] to &str: {}", x))?
     )
     .map_err(|x| format!("Could not write to stdout: {}", x))?;
 
-    while chunks.peek().is_some() {
-        let data: &str = str::from_utf8(chunks.next().unwrap())
-            .map_err(|x| format!("Could not convert &[u8] to &str: {}", x))?;
-
-        write!(
-            handle,
-            "\x1B_Gm={};{}\x1B\\",
-            chunks.peek().is_some() as i32,
-            data
-        )
+    handle
+        .write(chunks.next().ok_or("No data provided")?)
         .map_err(|x| format!("Could not write to stdout: {}", x))?;
+    handle
+        .write(b"\x1B\\")
+        .map_err(|x| format!("Could not write to stdout: {}", x))?;
+
+    while chunks.peek().is_some() {
+        let data: &[u8] = chunks.next().unwrap();
+        write!(handle, "\x1B_Gq=2,m={};", chunks.peek().is_some() as i32,)
+            .map_err(|x| format!("Could not write to stdout: {}", x))?;
+
+        handle
+            .write(data)
+            .map_err(|x| format!("Could not write to stdout: {}", x))?;
+        handle
+            .write(b"\x1B\\")
+            .map_err(|x| format!("Could not write to stdout: {}", x))?;
     }
 
     handle
         .flush()
         .map_err(|x| format!("Could not flush stdout: {}", x))?;
 
-    terminal_graphics_apc_success()?;
+    Ok(())
+}
+
+pub fn terminal_graphics_display_image(
+    id: usize,
+    col: usize,
+    row: usize,
+
+    x: usize,
+    y: usize,
+    w: usize,
+    h: usize,
+
+    c: usize,
+    r: usize,
+) -> Result<(), String> {
+    let mut handle: Stdout = stdout();
+
+    write!(handle, "\x1B[s\x1B[{};{}H", row, col)
+        .map_err(|x| format!("Could not write to stdout: {}", x))?;
+
+    /* Z-index < -1,073,741,824 will make the images to be drawn behind
+     * cells with colored background */
+    write!(
+        handle,
+        "\x1B_Gq=2,z=-1073741825,a=p,C=1,i={},x={},y={},w={},h={},c={},r={};\x1B\\",
+        id, x, y, w, h, c, r
+    )
+    .map_err(|x| format!("Could not write to stdout: {}", x))?;
+
+    handle
+        .write(b"\x1B[u")
+        .map_err(|x| format!("Could not write to stdout: {}", x))?;
+
+    handle
+        .flush()
+        .map_err(|x| format!("Could not flush stdout: {}", x))?;
+
     Ok(())
 }
