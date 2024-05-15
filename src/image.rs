@@ -1,32 +1,32 @@
-use crate::graphics::*;
+use crate::drivers::graphics::*;
 
 use mupdf::Pixmap;
 use nix::libc::winsize;
 
 pub struct Image {
     id: usize,
-    /* Stores the dimension of the zoomed in bitmap WITHOUT margin */
+    /* Stores the dimension of the zoomed in bitmap WITHOUT padding */
     dimensions: (i32, i32),
     precision: f64,
-    margin: i32,
+    padding: i32,
 }
 
 impl Image {
-    pub fn new(pixmap: &Pixmap, precision: f64) -> Result<Self, String> {
-        const MARGIN: usize = 400;
-        const MARGIN_CLR: u8 = 0u8;
+    pub fn new(pixmap: &Pixmap, precision: f64, padding: usize) -> Result<Self, String> {
+        const PADDING_CLR: u8 = 0u8;
 
         let mut data: Vec<u8> = Vec::new();
+
         data.extend(
-            std::iter::repeat(MARGIN_CLR)
-                .take((2 * MARGIN + pixmap.width() as usize) * MARGIN * 4),
+            std::iter::repeat(PADDING_CLR)
+                .take((2 * padding + pixmap.width() as usize) * padding * 4),
         );
 
         let row_iter = pixmap
             .samples()
             .chunks(pixmap.width() as usize * pixmap.n() as usize);
         for row in row_iter {
-            data.extend_from_slice(&[MARGIN_CLR; MARGIN * 4]);
+            data.extend(std::iter::repeat(PADDING_CLR).take(padding * 4));
 
             /* If not RGBA extend by adding the alpha channel */
             if pixmap.n() == 3 {
@@ -39,19 +39,19 @@ impl Image {
             } else {
                 data.extend_from_slice(row);
             }
-            data.extend_from_slice(&[MARGIN_CLR; MARGIN * 4]);
+            data.extend(std::iter::repeat(PADDING_CLR).take(padding * 4));
         }
 
         data.extend(
-            std::iter::repeat(MARGIN_CLR)
-                .take((2 * MARGIN + pixmap.width() as usize) * MARGIN * 4),
+            std::iter::repeat(PADDING_CLR)
+                .take((2 * padding + pixmap.width() as usize) * padding * 4),
         );
 
         let id: usize = terminal_graphics_allocate_id()?;
         terminal_graphics_transfer_bitmap(
             id,
-            pixmap.width() as usize + 2 * MARGIN,
-            pixmap.height() as usize + 2 * MARGIN,
+            pixmap.width() as usize + 2 * padding,
+            pixmap.height() as usize + 2 * padding,
             data.as_slice(),
             true,
         )?;
@@ -60,7 +60,7 @@ impl Image {
             id: id,
             dimensions: (pixmap.width() as i32, pixmap.height() as i32),
             precision: precision,
-            margin: MARGIN as i32,
+            padding: padding as i32,
         })
     }
 
@@ -71,60 +71,53 @@ impl Image {
         scale: f64,
         terminal_size: &winsize,
     ) -> Result<(), String> {
-        let pxpercol: f64 = terminal_size.ws_xpixel as f64 / terminal_size.ws_col as f64;
-        let pxperrow: f64 = terminal_size.ws_ypixel as f64 / terminal_size.ws_row as f64;
+        let (pxpercol, pxperrow): (f64, f64);
+        let (col0, col1, row0, row1): (f64, f64, f64, f64);
+        let (padding_top, padding_bottom): (f64, f64);
+        let (padding_left, padding_right): (f64, f64);
+        let (cropx, cropy, cropw, croph): (usize, usize, usize, usize);
+        
 
-        let col0: f64;
+        pxpercol = terminal_size.ws_xpixel as f64 / terminal_size.ws_col as f64;
+        pxperrow = terminal_size.ws_ypixel as f64 / terminal_size.ws_row as f64;
+
         if x < 0 {
             col0 = 0.0f64;
         } else {
             col0 = x as f64 / pxpercol;
         }
-        let col1: f64 =
-            (x as f64 + self.dimensions.0 as f64 * scale / self.precision) / pxpercol;
+        col1 = (x as f64 + self.dimensions.0 as f64 * scale / self.precision) / pxpercol;
 
-        let row0: f64;
         if y < 0 {
             row0 = 0.0f64;
         } else {
             row0 = y as f64 / pxperrow;
         }
-        let row1: f64 =
-            (y as f64 + self.dimensions.1 as f64 * scale / self.precision) / pxperrow;
+        row1 = (y as f64 + self.dimensions.1 as f64 * scale / self.precision) / pxperrow;
 
-        let margin_left: f64 = (col0 - col0.floor()) * pxpercol * self.precision / scale;
-        let margin_right: f64 = (col1.ceil() - col1) * pxpercol * self.precision / scale;
-        let margin_top: f64 = (row0 - row0.floor()) * pxperrow * self.precision / scale;
-        let margin_bottom: f64 = (row1.ceil() - row1) * pxperrow * self.precision / scale;
-
-        let cropx: usize;
+        padding_left = (col0 - col0.floor()) * pxpercol * self.precision / scale;
+        padding_right = (col1.ceil() - col1) * pxpercol * self.precision / scale;
+        padding_top = (row0 - row0.floor()) * pxperrow * self.precision / scale;
+        padding_bottom = (row1.ceil() - row1) * pxperrow * self.precision / scale;
+        
         if x < 0 {
-            cropx = (self.margin as f64 - x as f64 * self.precision / scale) as usize;
+            cropx = (self.padding as f64 - x as f64 * self.precision / scale) as usize;
+            cropw = ((col1 * pxpercol * self.precision / scale) + padding_right) as usize;
         } else {
-            cropx = (self.margin as f64 - margin_left) as usize;
+            cropx = (self.padding as f64 - padding_left) as usize;
+            cropw = (padding_left + padding_right + self.dimensions.0 as f64) as usize;
         }
 
-        let cropy: usize;
         if y < 0 {
-            cropy = (self.margin as f64 - y as f64 * self.precision / scale) as usize;
+            cropy = (self.padding as f64 - y as f64 * self.precision / scale) as usize;
+            croph =
+                ((row1 * pxperrow * self.precision / scale) + padding_bottom) as usize;
         } else {
-            cropy = (self.margin as f64 - margin_top) as usize;
+            cropy = (self.padding as f64 - padding_top) as usize;
+            croph = (padding_top + padding_bottom + self.dimensions.1 as f64) as usize;
         }
 
-        let cropw: usize;
-        if x < 0 {
-            cropw = ((col1 * pxpercol * self.precision / scale) + margin_right) as usize;
-        } else {
-            cropw = (margin_left + margin_right + self.dimensions.0 as f64) as usize;
-        }
-
-        let croph: usize;
-        if y < 0 {
-            croph = ((row1 * pxperrow * self.precision / scale) + margin_bottom) as usize;
-        } else {
-            croph = (margin_top + margin_bottom + self.dimensions.1 as f64) as usize;
-        }
-
+        /* If trying to display outside of terminal just return */
         if col1 < 0.0f64
             || row1 < 0.0f64
             || col0 > terminal_size.ws_col as f64
