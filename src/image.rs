@@ -1,4 +1,9 @@
-use crate::drivers::graphics::*;
+use std::sync::{
+    atomic::{AtomicUsize, Ordering},
+    RwLockReadGuard,
+};
+
+use crate::{drivers::graphics::*, Config, CONFIG, IMAGE_PADDING, TERMINAL_SIZE};
 
 use mupdf::Pixmap;
 use nix::libc::winsize;
@@ -7,13 +12,15 @@ pub struct Image {
     id: usize,
     /* Stores the dimension of the zoomed in bitmap WITHOUT padding */
     dimensions: (i32, i32),
-    precision: f64,
-    padding: i32,
+    data: Vec<u8>,
 }
 
 impl Image {
-    pub fn new(pixmap: &Pixmap, precision: f64, padding: usize) -> Result<Self, String> {
+    pub fn new(pixmap: &Pixmap) -> Result<Self, String> {
+        static ID: AtomicUsize = AtomicUsize::new(1);
+
         const PADDING_CLR: u8 = 0u8;
+        let padding: usize = *IMAGE_PADDING.get().unwrap();
 
         let mut data: Vec<u8> = Vec::new();
 
@@ -47,36 +54,47 @@ impl Image {
                 .take((2 * padding + pixmap.width() as usize) * padding * 4),
         );
 
-        let id: usize = terminal_graphics_allocate_id()?;
-        terminal_graphics_transfer_bitmap(
-            id,
-            pixmap.width() as usize + 2 * padding,
-            pixmap.height() as usize + 2 * padding,
-            data.as_slice(),
-            true,
-        )?;
-
-        Ok(Self {
-            id: id,
+        let image: Image = Self {
+            id: ID.load(Ordering::Relaxed),
             dimensions: (pixmap.width() as i32, pixmap.height() as i32),
-            precision: precision,
-            padding: padding as i32,
-        })
+            data: data,
+        };
+
+        ID.store(ID.load(Ordering::Relaxed) + 1, Ordering::Relaxed);
+        image.transfer()?;
+        Ok(image)
     }
 
-    pub fn display(
-        &self,
-        x: i32,
-        y: i32,
-        scale: f64,
-        terminal_size: &winsize,
-    ) -> Result<(), String> {
+    pub fn id(&self) -> usize {
+        return self.id;
+    }
+
+    pub fn size(&self) -> usize {
+        return self.data.len();
+    }
+
+    pub fn check(&self) -> Result<(), String> {
+        /* The first pixels should be invisible and therefore we have an easy if
+         * the image still exists */
+        terminal_graphics_display_image(self.id, 1, 1, 1, 1, 1, 1, 2, 2)?;
+        Ok(())
+    }
+
+    pub fn display(&self, x: i32, y: i32, scale: f64) -> Result<bool, String> {
+        /* `true` indicates that the image was actually displayed and was not
+         * tried to be displayed outside of the viewpoint */
+
+        let config: &Config = CONFIG.get().unwrap();
+        let padding: usize = *IMAGE_PADDING.get().unwrap();
+
         let (pxpercol, pxperrow): (f64, f64);
         let (col0, col1, row0, row1): (f64, f64, f64, f64);
         let (padding_top, padding_bottom): (f64, f64);
         let (padding_left, padding_right): (f64, f64);
         let (cropx, cropy, cropw, croph): (usize, usize, usize, usize);
-        
+
+        let terminal_size: RwLockReadGuard<winsize> =
+            TERMINAL_SIZE.get().unwrap().read().unwrap();
 
         pxpercol = terminal_size.ws_xpixel as f64 / terminal_size.ws_col as f64;
         pxperrow = terminal_size.ws_ypixel as f64 / terminal_size.ws_row as f64;
@@ -86,34 +104,45 @@ impl Image {
         } else {
             col0 = x as f64 / pxpercol;
         }
-        col1 = (x as f64 + self.dimensions.0 as f64 * scale / self.precision) / pxpercol;
+        col1 = (x as f64
+            + self.dimensions.0 as f64 * scale / config.viewer.render_precision)
+            / pxpercol;
 
         if y < 0 {
             row0 = 0.0f64;
         } else {
             row0 = y as f64 / pxperrow;
         }
-        row1 = (y as f64 + self.dimensions.1 as f64 * scale / self.precision) / pxperrow;
+        row1 = (y as f64
+            + self.dimensions.1 as f64 * scale / config.viewer.render_precision)
+            / pxperrow;
 
-        padding_left = (col0 - col0.floor()) * pxpercol * self.precision / scale;
-        padding_right = (col1.ceil() - col1) * pxpercol * self.precision / scale;
-        padding_top = (row0 - row0.floor()) * pxperrow * self.precision / scale;
-        padding_bottom = (row1.ceil() - row1) * pxperrow * self.precision / scale;
-        
+        padding_left =
+            (col0 - col0.floor()) * pxpercol * config.viewer.render_precision / scale;
+        padding_right =
+            (col1.ceil() - col1) * pxpercol * config.viewer.render_precision / scale;
+        padding_top =
+            (row0 - row0.floor()) * pxperrow * config.viewer.render_precision / scale;
+        padding_bottom =
+            (row1.ceil() - row1) * pxperrow * config.viewer.render_precision / scale;
+
         if x < 0 {
-            cropx = (self.padding as f64 - x as f64 * self.precision / scale) as usize;
-            cropw = ((col1 * pxpercol * self.precision / scale) + padding_right) as usize;
+            cropx = (padding as f64 - x as f64 * config.viewer.render_precision / scale)
+                as usize;
+            cropw = ((col1 * pxpercol * config.viewer.render_precision / scale)
+                + padding_right) as usize;
         } else {
-            cropx = (self.padding as f64 - padding_left) as usize;
+            cropx = (padding as f64 - padding_left) as usize;
             cropw = (padding_left + padding_right + self.dimensions.0 as f64) as usize;
         }
 
         if y < 0 {
-            cropy = (self.padding as f64 - y as f64 * self.precision / scale) as usize;
-            croph =
-                ((row1 * pxperrow * self.precision / scale) + padding_bottom) as usize;
+            cropy = (padding as f64 - y as f64 * config.viewer.render_precision / scale)
+                as usize;
+            croph = ((row1 * pxperrow * config.viewer.render_precision / scale)
+                + padding_bottom) as usize;
         } else {
-            cropy = (self.padding as f64 - padding_top) as usize;
+            cropy = (padding as f64 - padding_top) as usize;
             croph = (padding_top + padding_bottom + self.dimensions.1 as f64) as usize;
         }
 
@@ -123,7 +152,7 @@ impl Image {
             || col0 > terminal_size.ws_col as f64
             || row0 > terminal_size.ws_row as f64
         {
-            return Ok(());
+            return Ok(false);
         }
 
         /* Do not forget that columns and rows are one-indexed in terminals */
@@ -139,13 +168,26 @@ impl Image {
             (row1.ceil() - row0.floor()) as usize,
         )?;
 
+        Ok(true)
+    }
+
+    pub fn transfer(&self) -> Result<(), String> {
+        let padding: usize = *IMAGE_PADDING.get().unwrap();
+
+        terminal_graphics_transfer_bitmap(
+            self.id,
+            self.dimensions.0 as usize + 2 * padding,
+            self.dimensions.1 as usize + 2 * padding,
+            self.data.as_slice(),
+            true,
+        )?;
+
         Ok(())
     }
 }
 
 impl Drop for Image {
     fn drop(&mut self) {
-        /* Remove the allocated graphics ID when dropping the state */
-        let _ = terminal_graphics_deallocate_id(self.id);
+        // let _ = terminal_graphics_deallocate_id(self.id);
     }
 }
