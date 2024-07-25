@@ -7,7 +7,18 @@ edition = "2021"
 
 [dependencies]
 base64 = "0.22.1"
+crossbeam-channel = "0.5.13"
+dirs = "5.0.1"
 mupdf = "0.4.2"
 nix = { version = "0.28.0", features = ["term", "ioctl"] }
 notify = "6.1.1"
-regex = "1.10.4"
+pfmt = "0.4.0"
+regex-automata = "0.4.7"
+serde = "1.0.204"
+toml = "0.8.15"
+
+[profile.release]
+panic = 'abort'
+
+[profile.dev]
+panic = 'abort'
