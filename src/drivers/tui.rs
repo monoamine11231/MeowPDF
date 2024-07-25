@@ -1,19 +1,8 @@
 use nix::libc;
 use nix::sys::termios::*;
 use std::fs::File;
-use std::io::{stdin, stdout, Read, Stdout, Write};
+use std::io::{stdout, Stdout, Write};
 use std::mem::MaybeUninit;
-
-#[derive(Debug, Clone, Copy)]
-pub enum TerminalKey {
-    UP,
-    LEFT,
-    RIGHT,
-    DOWN,
-    CTRLC,
-    CTRLD,
-    OTHER(u8),
-}
 
 pub fn terminal_control_raw_mode() -> Result<Termios, String> {
     let tty_file_1: File =
@@ -32,33 +21,29 @@ pub fn terminal_control_raw_mode() -> Result<Termios, String> {
     tty_raw.output_flags &= !(OutputFlags::OPOST);
     tty_raw.control_flags |= ControlFlags::CS8;
 
-    tty_raw.control_chars[SpecialCharacterIndices::VTIME as usize] = 1;
-    tty_raw.control_chars[SpecialCharacterIndices::VMIN as usize] = 0;
+    tty_raw.control_chars[SpecialCharacterIndices::VTIME as usize] = 0;
+    tty_raw.control_chars[SpecialCharacterIndices::VMIN as usize] = 1;
 
     let tty_file_2: File =
         File::open("/dev/tty").map_err(|x| format!("Could not open /dev/tty: {}", x))?;
     tcsetattr(tty_file_2, SetArg::TCSAFLUSH, &tty_raw)
         .map_err(|x| format!("Could not set `termios` struct to /dev/tty: {}", x))?;
 
-    print!("\x1B[?25l");
-    print!("\x1B[s");
-    print!("\x1B[?47h");
-    print!("\x1B[?1049h");
-    stdout()
-        .flush()
-        .map_err(|x| format!("Could not flush stdout: {}", x))?;
+    let mut handle: Stdout = stdout();
+    handle
+        .write(b"\x1B[?25l\x1B[s\x1B[?47h\x1B[?1049;1003;1006h")
+        .unwrap();
+    handle.flush().unwrap();
 
     Ok(tty_data_original)
 }
 
 pub fn terminal_control_default_mode(tty: &Termios) -> Result<(), String> {
-    print!("\x1B[?1049l");
-    print!("\x1B[?47l");
-    print!("\x1B[u");
-    print!("\x1B[?25h");
-    stdout()
-        .flush()
-        .map_err(|x| format!("Could not flush stdout: {}", x))?;
+    let mut handle: Stdout = stdout();
+    handle
+        .write(b"\x1B[?1003;1006;1049l\x1B[?47l\x1B[u\x1B[?25h")
+        .unwrap();
+    handle.flush().unwrap();
 
     let tty_file: File =
         File::open("/dev/tty").map_err(|x| format!("Could not open /dev/tty: {}", x))?;
@@ -70,65 +55,14 @@ pub fn terminal_control_default_mode(tty: &Termios) -> Result<(), String> {
 
 #[inline(always)]
 /* Clears screen without freeing image memory */
-pub fn terminal_tui_clear() -> Result<(), String> {
+pub fn terminal_tui_clear() {
     /* Safely clear screen by moving cursor to 0,0 and then clearing the rest.
      * If \x1B[2J is used then a stack smashing error occurs when displaying an
      * image. Bug??? */
     let mut handle: Stdout = stdout();
-    handle
-        .write(b"\x1B[s\x1B[1;1H\x1B[0J\x1B[u")
-        .map_err(|x| format!("Could not write to stdout: {}", x))?;
-    handle
-        .write(b"\x1B_Ga=d,d=a\x1B\\")
-        .map_err(|x| format!("Could not write to stdout: {}", x))?;
-    handle
-        .flush()
-        .map_err(|x| format!("Could not flush stdout: {}", x))?;
-    Ok(())
-}
-
-pub fn terminal_tui_key_iter() -> impl Iterator<Item = TerminalKey> {
-    let mut escape: bool = false;
-    let mut window: Vec<u8> = Vec::new();
-    stdin().bytes().filter_map(move |x| {
-        let b: u8 = x.expect("Could not read a byte from stdin");
-
-        if !escape {
-            escape = b == b'\x1B';
-        }
-
-        window.push(b);
-        let res: Option<TerminalKey> = match window.as_slice() {
-            [b'\x03'] => Some(TerminalKey::CTRLC),
-            [b'\x04'] => Some(TerminalKey::CTRLD),
-
-            [b'\x1B', b'[', b'A'] => Some(TerminalKey::UP),
-            [b'\x1B', b'[', b'B'] => Some(TerminalKey::DOWN),
-            [b'\x1B', b'[', b'C'] => Some(TerminalKey::RIGHT),
-            [b'\x1B', b'[', b'D'] => Some(TerminalKey::LEFT),
-
-            c if !escape => Some(TerminalKey::OTHER(c[0])),
-            _ => None,
-        };
-
-        if !escape {
-            window.clear();
-        }
-
-        if escape && res.is_some() {
-            escape = false;
-            window.clear();
-        }
-
-        return res;
-    })
-}
-
-mod ioctl {
-    use nix::ioctl_read_bad;
-    use nix::libc;
-
-    ioctl_read_bad!(terminal_size, libc::TIOCGWINSZ, libc::winsize);
+    handle.write(b"\x1B[s\x1B[1;1H\x1B[0J\x1B[u").unwrap();
+    handle.write(b"\x1B_Ga=d,d=a\x1B\\").unwrap();
+    handle.flush().unwrap();
 }
 
 pub fn terminal_tui_get_dimensions() -> Result<libc::winsize, String> {
@@ -147,4 +81,11 @@ pub fn terminal_tui_get_dimensions() -> Result<libc::winsize, String> {
         )),
     };
     ret
+}
+
+mod ioctl {
+    use nix::ioctl_read_bad;
+    use nix::libc;
+
+    ioctl_read_bad!(terminal_size, libc::TIOCGWINSZ, libc::winsize);
 }
