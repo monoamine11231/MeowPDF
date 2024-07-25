@@ -1,11 +1,15 @@
-use mupdf::{Document, Page};
-use nix::pty::Winsize;
+use std::{
+    collections::{HashMap, VecDeque},
+    sync::{Arc, Mutex, MutexGuard, RwLock},
+    thread::{self, JoinHandle},
+};
 
-use crate::{terminal_tui_get_dimensions, Image};
+use crossbeam_channel::{select_biased, unbounded, Receiver, Sender};
+use mupdf::{Colorspace, Document, Error, Matrix, Page, Pixmap};
 
-
-const PRECISION: f64 = 2.0f64;
-const MARGIN_BOTTOM: f32 = 100.0f32;
+use crate::{
+    drivers::broadcast::UnboundedBroadcast, Config, Image, CONFIG, TERMINAL_SIZE,
+};
 
 pub struct ViewerOffset {
     page: usize,
@@ -41,14 +45,20 @@ impl ViewerOffset {
         self.page = index;
     }
 
-    pub fn jump(&mut self, page: usize) {
-        self.page = page;
+    pub fn jump(&mut self, page: usize) -> Result<(), String> {
+        if page >= self.cumulative_heights.len() {
+            Err("Given page number is larger than the number of pages")?;
+        }
+
+        self.page = usize::min(page, self.cumulative_heights.len() - 1);
 
         if page == 0 {
             self.offset.1 = 0.0f32;
         } else {
-            self.offset.1 = self.cumulative_heights[page - 1];
+            self.offset.1 = self.cumulative_heights[self.page - 1];
         }
+
+        Ok(())
     }
 
     pub fn page(&self) -> usize {
@@ -78,158 +88,345 @@ impl ViewerOffset {
     }
 }
 
-
-
 pub struct Viewer {
-    pub size: Winsize,
     pub file: String,
-    pub document: Document,
-    pub cache: Vec<Page>,
-    pub images: Vec<Image>,
+    pub thread_render: Option<JoinHandle<Result<(), String>>>,
     pub scale: f32,
-    pub offset: ViewerOffset,
+
+    pub reload_initiator: Option<Sender<()>>,
+    reload_informer_broadcast: Option<UnboundedBroadcast<()>>,
+    pub reload_informer_global: Option<Receiver<()>>,
+    reload_informer_internal: Option<Receiver<()>>,
+    render_scheduler: Option<Sender<usize>>, /* Page index as input */
+
+    image_channel: Option<Receiver<(usize, Option<Arc<RwLock<Image>>>)>>,
+    pub rerender_instructor: Option<Receiver<()>>,
+    pub rerender_initializer: Option<Sender<()>>,
+    pub offset: Arc<Mutex<ViewerOffset>>,
+    pub images: HashMap<usize, Arc<RwLock<Image>>>,
+    invalidated: HashMap<usize, ()>,
+    scheduled4render: HashMap<usize, ()>,
+    memory_used: usize,
+    last_rendered: VecDeque<usize>,
 }
 
 impl Viewer {
-    /* =============================== Document loading ============================== */
-    pub fn init(file: String) -> Result<Self, String> {
-        let winsize: Winsize = terminal_tui_get_dimensions()
-            .map_err(|x| format!("Could not get terminal dimensions: {}", x))?;
-
-        if winsize.ws_xpixel == 0 || winsize.ws_ypixel == 0 {
-            Err("Could not get terminal dimensions: Invalid results from IOCTL")?;
-        }
-        
-        let document: Document = Document::open(file.as_str())
-            .map_err(|x| format!("Could not open the given PDF file: {}", x))?;
-
-        if !document.is_pdf() {
-            Err("The given PDF file is not a PDF!".to_string())?;
-        }
-
-        let mut cumulative_heights: Vec<f32> = Vec::new();
-        let mut cache: Vec<Page> = Vec::new();
-
-        let page_count: i32 = document
-            .page_count()
-            .map_err(|x| format!("Could not extract the number of pages: {}", x))?;
-
-        for i in 0..page_count {
-            let page: Page = document
-                .load_page(i)
-                .map_err(|x| format!("Could not load page {}: {}", i, x))?;
-
-            let height: f32 = page
-                .bounds()
-                .map_err(|x| format!("Could not get bounds for page {}: {}", i, x))?
-                .height();
-
-            cumulative_heights.push(
-                cumulative_heights.last().unwrap_or(&0.0f32) + height + MARGIN_BOTTOM,
-            );
-            cache.push(page);
-        }
-
+    pub fn new(file: &str) -> Result<Self, String> {
+        let config: &Config = CONFIG.get().unwrap();
         let viewer: Viewer = Self {
-            size: winsize,
-            file: file,
-            document: document,
-            cache: cache,
-            images: Vec::new(),
-            scale: 0.2,
-            offset: ViewerOffset::new(cumulative_heights),
+            file: file.to_string(),
+            thread_render: None,
+            scale: config.viewer.scale_default,
+            reload_initiator: None,
+            reload_informer_broadcast: None,
+            reload_informer_global: None,
+            reload_informer_internal: None,
+            render_scheduler: None,
+            image_channel: None,
+            rerender_instructor: None,
+            rerender_initializer: None,
+            offset: Arc::new(Mutex::new(ViewerOffset::new(Vec::new()))),
+            images: HashMap::new(),
+            invalidated: HashMap::new(),
+            scheduled4render: HashMap::new(),
+            memory_used: 0,
+            last_rendered: VecDeque::new(),
         };
         Ok(viewer)
     }
 
-    /* Used when watched document has been changed */
-    // pub fn document_load(&mut self) -> Result<(), String> {
-    //     let mut cumulative_heights: Vec<f32> = Vec::new();
-    //     let mut cache: Vec<Page> = Vec::new();
+    pub fn run(&mut self) -> Result<(), String> {
+        let (sender_render_init, receive_render_init) = unbounded::<()>();
+        let (sender_display, receive_display) = unbounded::<usize>();
+        let (sender_image, receive_image) =
+            unbounded::<(usize, Option<Arc<RwLock<Image>>>)>();
+        let (sender_rerender, receive_rerender) = unbounded::<()>();
+        let mut reload_informer_broadcast: UnboundedBroadcast<()> =
+            UnboundedBroadcast::new();
 
-    //     let page_count: i32 = self
-    //         .document
-    //         .page_count()
-    //         .map_err(|x| format!("Could not extract the number of pages: {}", x))?;
+        self.reload_initiator = Some(sender_render_init);
+        self.reload_informer_global = Some(reload_informer_broadcast.subscribe());
+        self.reload_informer_internal = Some(reload_informer_broadcast.subscribe());
+        self.reload_informer_broadcast = Some(reload_informer_broadcast);
+        self.render_scheduler = Some(sender_display.clone()); /* Will be used later */
+        self.image_channel = Some(receive_image);
+        self.rerender_instructor = Some(receive_rerender);
+        self.rerender_initializer = Some(sender_rerender.clone());
 
-    //     for i in 0..page_count {
-    //         let page: Page = self
-    //             .document
-    //             .load_page(i)
-    //             .map_err(|x| format!("Could not load page {}: {}", i, x))?;
+        /* ======================== Thread rendering PDF pages ======================= */
+        let offset: Arc<Mutex<ViewerOffset>> = self.offset.clone();
+        let file: String = self.file.clone();
+        let sender_rerender1: Sender<()> = sender_rerender.clone();
+        let informer_broadcast: UnboundedBroadcast<()> =
+            self.reload_informer_broadcast.clone().unwrap();
+        let thread_render: JoinHandle<Result<(), String>> = thread::spawn(move || {
+            let config: &Config = CONFIG.get().unwrap();
+            let mut document: Document;
+            let mut cache: Vec<Page> = Vec::new();
+            let mut cumulative_heights: Vec<f32> = Vec::new();
+            let cs: Colorspace = Colorspace::device_rgb();
+            let ctm: Matrix = Matrix::new_scale(
+                config.viewer.render_precision as f32,
+                config.viewer.render_precision as f32,
+            );
 
-    //         let height: f32 = page
-    //             .bounds()
-    //             .map_err(|x| format!("Could not get bounds for page {}: {}", i, x))?
-    //             .height();
+            macro_rules! reload_document {
+                () => {
+                    document = Document::open(&file).map_err(|x| {
+                        format!("Could not open the given PDF file: {}", x)
+                    })?;
 
-    //         cumulative_heights.push(
-    //             cumulative_heights.last().unwrap_or(&0.0f32) + height + MARGIN_BOTTOM,
-    //         );
-    //         cache.push(page);
-    //     }
+                    if !document.is_pdf() {
+                        Err("The given PDF file is not a PDF!".to_string())?;
+                    }
+                    cache.clear();
+                    cumulative_heights.clear();
 
-    //     self.cache = cache;
+                    let page_count: i32 = document.page_count().map_err(|x| {
+                        format!("Could not extract the number of pages: {}", x)
+                    })?;
 
-    //     Ok(())
-    // }
+                    for i in 0..page_count {
+                        let page: Page = document
+                            .load_page(i)
+                            .map_err(|x| format!("Could not load page {}: {}", i, x))?;
+
+                        let height: f32 = page
+                            .bounds()
+                            .map_err(|x| {
+                                format!("Could not get bounds for page {}: {}", i, x)
+                            })?
+                            .height();
+
+                        cache.push(page);
+                        cumulative_heights.push(
+                            cumulative_heights.last().unwrap_or(&0.0f32)
+                                + height
+                                + config.viewer.margin_bottom,
+                        );
+                    }
+                    {
+                        offset.lock().unwrap().cumulative_heights =
+                            cumulative_heights.to_owned();
+                    }
+
+                    /* Notify that the document has been rendered */
+                    let _ = informer_broadcast.send(());
+                };
+            }
+            reload_document!();
+
+            loop {
+                select_biased! {
+                    recv(receive_render_init) -> _ => {
+                        reload_document!();
+                    },
+                    recv(receive_display) -> page => {
+                        /* Do not raise exceptions. This can become a reality when the
+                        * document has been modified and there are less pages than in the
+                        * old version. The page should be removed in that case from the
+                        * hash map on the other side. This is done by sending `None` */
+                        if page.is_err() {
+                            continue;
+                        }
+
+                        let page_unwrap: usize = page.unwrap();
+                        if cache.get(page_unwrap).is_none() {
+                            /* Ignore send errors since they occur only when trying to
+                             * close the application */
+                            let _ = sender_image.send((page_unwrap, None));
+                            continue;
+                        }
+
+                        /* Load the image */
+                        let data: Result<Pixmap, Error> =
+                            cache[page_unwrap].to_pixmap(&ctm, &cs, 0.0f32, false);
+
+                        if data.is_err() {
+                            continue;
+                        }
+
+                        let res: Result<Image, String> = Image::new(&data.unwrap());
+                        if res.is_err() {
+                            continue;
+                        }
+
+                        let image: Image = res.unwrap();
+                        /* Ignore send errors since they occur only when trying to
+                        * close the application */
+                        let _ = sender_image
+                            .send((page_unwrap, Some(Arc::new(RwLock::new(image)))));
+                        let _ = sender_rerender1.send(());
+                    }
+                }
+            }
+        });
+
+        /* ======================== Check and move the threads ======================= */
+        if thread_render.is_finished() {
+            thread_render.join().unwrap()?;
+        } else {
+            self.thread_render = Some(thread_render);
+        }
+
+        Ok(())
+    }
 
     /* ================================ Miscellaneous ================================ */
 
     /* Displays the pages based on the internal state of the offset.
      * Calculates how many pages should be rendered based on the terminal size
      */
-    pub fn display_pages(&self) -> Result<(), String> {
+    pub fn display_pages(&mut self) -> Result<Vec<usize>, String> {
+        /* Track what images have been actually displayed on the screen to
+         * later check if there occured errors during the display */
+        let mut displayed: Vec<usize> = Vec::new();
+        let config: &Config = CONFIG.get().unwrap();
+        let offset_lock: MutexGuard<ViewerOffset> = self.offset.lock().unwrap();
+
+        macro_rules! load_or_display {
+            ($page:expr, $offset:expr, $scale:expr, $preload:expr) => {
+                if (!self.images.contains_key(&$page)
+                    || self.invalidated.contains_key(&$page))
+                    && !self.scheduled4render.contains_key(&$page)
+                {
+                    let res = self.render_scheduler.as_ref().unwrap().send($page);
+                    if res.is_ok() {
+                        self.scheduled4render.insert($page, ());
+                    }
+                }
+
+                if self.images.contains_key(&$page) {
+                    if $preload {
+                        self.images[&$page].read().unwrap().check().unwrap();
+                        displayed.push($page);
+                    } else {
+                        let has_displayed: bool = self.images[&$page]
+                            .read()
+                            .unwrap()
+                            .display(
+                                offset_lock.offset().0 as i32,
+                                $offset as i32,
+                                $scale as f64,
+                            )
+                            .unwrap();
+
+                        if has_displayed {
+                            displayed.push($page);
+                        }
+                    }
+                }
+            };
+        }
+
+        macro_rules! remove_image {
+            ($page:expr) => {
+                self.memory_used -= self.images[&$page].read().unwrap().size();
+                self.images.remove(&$page);
+            };
+        }
+
+        let image_channel: &mut Receiver<(usize, Option<Arc<RwLock<Image>>>)> =
+            self.image_channel.as_mut().unwrap();
+
+        /* Fetch all the images and put them into the hashmap.
+         * Delete old ones if data limit has been exceeded */
+        while let Ok((page, image)) = image_channel.try_recv() {
+            /* Receiving a none implies that that image should be removed from the list */
+            if image.is_none() {
+                remove_image!(page);
+                continue;
+            }
+
+            self.invalidated.remove(&page);
+
+            let image_unwrapped: Arc<RwLock<Image>> = image.unwrap();
+            self.memory_used += image_unwrapped.read().unwrap().size();
+            self.last_rendered.push_back(page);
+
+            self.images.insert(page, image_unwrapped);
+            self.scheduled4render.remove(&page);
+
+            while self.memory_used >= config.viewer.memory_limit {
+                let page2remove: usize = self.last_rendered.pop_front().unwrap();
+                if !self.images.contains_key(&page2remove) {
+                    continue;
+                }
+                remove_image!(page2remove);
+            }
+        }
+
+        let reload: bool = self
+            .reload_informer_internal
+            .clone()
+            .unwrap()
+            .try_recv()
+            .is_ok();
+
+        if reload {
+            for k in self.images.keys() {
+                self.invalidated.insert(*k, ());
+            }
+        }
+
         /* The index of the first rendered page */
-        let mut page_index: usize = self.offset.page();
+        let mut page_index: usize = offset_lock.page();
+        if offset_lock.cumulative_heights.len() <= page_index {
+            return Ok(displayed);
+        }
 
         /* Offset inside target page */
-        let mut page_offset: f32 = self.offset.offset().1;
+        let mut page_offset: f32 = offset_lock.offset().1;
         page_offset -= if page_index == 0 {
             0.0f32
         } else {
-            self.offset.cumulative_heights[page_index - 1]
+            offset_lock.cumulative_heights[page_index - 1]
         };
 
-        self.images[page_index]
-            .display(
-                self.offset.offset().0 as i32,
-                (-page_offset * self.scale) as i32,
-                self.scale as f64,
-                &self.size,
-            )
-            .map_err(|x| format!("Could not display page {}: {}", 0, x))?;
+        /* Preload 1 page before the first displayed page to avoid flickering pages */
+        if page_index > 0 {
+            load_or_display!(page_index - 1, 0, 0, true);
+        }
 
-        let mut px_displayed_vertically: usize = ((self
-            .offset
+        /* Display the first page which is special because of extra offset calculation */
+        load_or_display!(page_index, -page_offset * self.scale, self.scale, false);
+        let mut displayed_offset: f32 = (offset_lock
             .page_height(page_index)
-            .map_err(|x| {
-            format!("Could not retrieve page height: {}", x)
-        })? - page_offset)
-            * self.scale) as usize;
+            .map_err(|x| format!("Could not retrieve page height: {}", x))?
+            - page_offset)
+            * self.scale;
 
         page_index += 1;
-        while px_displayed_vertically < self.size.ws_ypixel as usize {
-            if page_index >= self.images.len() {
-                break;
-            }
-            self.images[page_index]
-                .display(
-                    self.offset.offset().0 as i32,
-                    px_displayed_vertically as i32,
-                    self.scale as f64,
-                    &self.size,
-                )
-                .map_err(|x| format!("Could not display page {}: {}", page_index, x))?;
 
-            px_displayed_vertically += (self
-                .offset
+        /* Display the other pages that fit inside the viewpoint of the terminal */
+        while displayed_offset
+            < TERMINAL_SIZE.get().unwrap().read().unwrap().ws_ypixel as f32
+            && page_index < offset_lock.cumulative_heights.len()
+        {
+            load_or_display!(page_index, displayed_offset, self.scale, false);
+            displayed_offset += offset_lock
                 .page_height(page_index)
-                .map_err(|x| format!("Could not retrieve page height: {}", x))?
-                * self.scale) as usize;
+                .map_err(|x: String| format!("Could not retrieve page height: {}", x))?
+                * self.scale;
             page_index += 1;
         }
 
-        Ok(())
+        /* Preload N pages after the last displayed page */
+        for _ in 0..usize::min(
+            config.viewer.pages_preloaded,
+            offset_lock.cumulative_heights.len() - page_index,
+        ) {
+            load_or_display!(page_index, 0, 0, true);
+            page_index += 1;
+        }
+
+        Ok(displayed)
+    }
+
+    pub fn schedule_transfer(&mut self, page: usize) {
+        let sender_rerender: Sender<()> = self.rerender_initializer.clone().unwrap();
+        let image: Arc<RwLock<Image>> = self.images[&page].clone();
+        let _ = image.read().unwrap().transfer();
+        let _ = sender_rerender.send(());
     }
 }
