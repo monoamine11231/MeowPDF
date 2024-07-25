@@ -2,6 +2,9 @@
 C/
 test.txt
 test*.pdf
+main.typ
+main.pdf
+*.log
 
 # Added by cargo
 
