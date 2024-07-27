@@ -1,6 +1,6 @@
 use crate::{drivers::input::GraphicsResponse, Config};
 use crossbeam_channel::Receiver;
-use nix::libc::winsize;
+use nix::pty::Winsize;
 use std::sync::{Mutex, OnceLock, RwLock};
 
 pub const CONFIG_FILENAME: &'static str = "intermpdf";
@@ -27,13 +27,13 @@ pages_preloaded = 6
 position = "bottom"
 segment_mode = "\u001B[48;2;0;0;255m {mode} \u001B[38;2;0;0;255m\u001B[48;2;0;255;0m\uE0B0"
 segment_file = "\u001B[38;2;255;255;255m\u001B[48;2;0;255;0m {file} \u001B[38;2;0;255;0m\u001B[48;2;255;0;0m\uE0B0"
-segment_scale = "\u001B[38;2;255;255;255m {scale}"
+segment_scale = "\u001B[38;2;255;255;255m {page}"
 "#;
 
 /* Hate on me for those global singletons as much as you want. */
 pub static CONFIG: OnceLock<Config> = OnceLock::new();
 pub static RECEIVER_GR: OnceLock<Mutex<Receiver<GraphicsResponse>>> = OnceLock::new();
-pub static TERMINAL_SIZE: OnceLock<RwLock<winsize>> = OnceLock::new();
+pub static TERMINAL_SIZE: OnceLock<RwLock<Winsize>> = OnceLock::new();
 pub static IMAGE_PADDING: OnceLock<usize> = OnceLock::new();
 pub static SOFTWARE_ID: OnceLock<String> = OnceLock::new();
 

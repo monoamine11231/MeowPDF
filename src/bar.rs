@@ -1,10 +1,10 @@
-use crate::{Config, ConfigBarPosition, Viewer, CONFIG, TERMINAL_SIZE};
-use nix::libc::winsize;
+use crate::{Config, ConfigBarPosition, Viewer, ViewerOffset, CONFIG, TERMINAL_SIZE};
+use nix::pty::Winsize;
 use pfmt::{Fmt, FormatTable};
 use std::{
     collections::HashMap,
     io::{stdout, StdoutLock, Write},
-    sync::RwLockReadGuard,
+    sync::{MutexGuard, RwLockReadGuard},
 };
 
 #[derive(Debug)]
@@ -27,7 +27,7 @@ impl Bar {
 
     pub fn render(&self, viewer: &Viewer) -> Result<(), String> {
         let config: &Config = CONFIG.get().unwrap();
-        let terminal_size: RwLockReadGuard<winsize> =
+        let terminal_size: RwLockReadGuard<Winsize> =
             TERMINAL_SIZE.get().unwrap().read().unwrap();
         let mut handle: StdoutLock = stdout().lock();
 
@@ -50,8 +50,7 @@ impl Bar {
 
 fn bar_build_string(bar: &Bar, viewer: &Viewer) -> Result<String, String> {
     let config: &Config = CONFIG.get().unwrap();
-    let terminal_size: RwLockReadGuard<winsize> =
-        TERMINAL_SIZE.get().unwrap().read().unwrap();
+    let offset_lock: RwLockReadGuard<ViewerOffset> = viewer.offset.read().unwrap();
 
     let mut table: HashMap<&str, Box<dyn Fmt>> = HashMap::new();
     let mode: &str = match bar.mode {
@@ -60,7 +59,11 @@ fn bar_build_string(bar: &Bar, viewer: &Viewer) -> Result<String, String> {
     };
     table.insert("mode", Box::new(mode));
     table.insert("file", Box::new(String::from(viewer.file.clone())));
-    table.insert("scale", Box::new(format!("{:.0}%", viewer.scale*100.0f32)));
+    table.insert(
+        "scale",
+        Box::new(format!("{:.0}%", offset_lock.get_scale() * 100.0f32)),
+    );
+    table.insert("page", Box::new(format!("{}", offset_lock.page_view())));
 
     let mut res: String = String::new();
     res.push_str(

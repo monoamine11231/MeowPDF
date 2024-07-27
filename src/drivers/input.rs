@@ -155,7 +155,7 @@ impl GraphicsResponse {
         }
     }
 
-    #[warn(dead_code)]
+    #[allow(dead_code)]
     fn load(&mut self) {
         let spl1: Split<char> = self.source.split(',');
         for kv in spl1 {
@@ -172,7 +172,7 @@ impl GraphicsResponse {
         self.loaded = true;
     }
 
-    #[warn(dead_code)]
+    #[allow(dead_code)]
     pub fn control(&mut self) -> &HashMap<String, String> {
         if !self.loaded {
             self.load();

@@ -1,39 +1,41 @@
 use std::{
     collections::{HashMap, VecDeque},
-    sync::{Arc, Mutex, MutexGuard, RwLock},
+    sync::{Arc, RwLock, RwLockReadGuard},
     thread::{self, JoinHandle},
 };
 
 use crossbeam_channel::{select_biased, unbounded, Receiver, Sender};
 use mupdf::{Colorspace, Document, Error, Matrix, Page, Pixmap};
+use nix::pty::Winsize;
 
 use crate::{
     drivers::broadcast::UnboundedBroadcast, Config, Image, CONFIG, TERMINAL_SIZE,
 };
 
 pub struct ViewerOffset {
-    page: usize,
-    /* Offset is given in page width and page height units */
-    offset: (f32, f32),
+    scale: f32,
+    page_first: usize,  /* The first page in the view */
+    page_view: usize,   /* The page in the middle */
+    offset: (f32, f32), /* Offset is given in page size units ≈ pixels */
     cumulative_heights: Vec<f32>,
 }
 
 impl ViewerOffset {
     pub fn new(cumulative_heights: Vec<f32>) -> Self {
+        let config: &Config = CONFIG.get().unwrap();
         Self {
-            page: 0,
+            scale: config.viewer.scale_default,
+            page_first: 0,
+            page_view: 0,
             offset: (0.0f32, 0.0f32),
             cumulative_heights: cumulative_heights,
         }
     }
 
-    pub fn scroll(&mut self, amount: (f32, f32)) {
-        self.offset.0 += amount.0;
-        self.offset.1 += amount.1;
-
+    fn offset2page(&self, offset: f32) -> usize {
         /* Update page index by performing binary search */
         let res = self.cumulative_heights.binary_search_by(|x: &f32| {
-            x.partial_cmp(&self.offset.1)
+            x.partial_cmp(&offset)
                 .expect("NaN value found in cumulative height vector")
         });
 
@@ -42,7 +44,20 @@ impl ViewerOffset {
             Err(x) => x,
         };
 
-        self.page = index;
+        index
+    }
+
+    pub fn scroll(&mut self, amount: (f32, f32)) {
+        let terminal_size_lock: RwLockReadGuard<Winsize> =
+            TERMINAL_SIZE.get().unwrap().read().unwrap();
+
+        self.offset.0 += amount.0;
+        self.offset.1 += amount.1;
+
+        self.page_first = self.offset2page(self.offset.1);
+        self.page_view = self.offset2page(
+            self.offset.1 + terminal_size_lock.ws_ypixel as f32 * 0.5 / self.scale,
+        );
     }
 
     pub fn jump(&mut self, page: usize) -> Result<(), String> {
@@ -50,19 +65,40 @@ impl ViewerOffset {
             Err("Given page number is larger than the number of pages")?;
         }
 
-        self.page = usize::min(page, self.cumulative_heights.len() - 1);
+        self.page_first = usize::min(page, self.cumulative_heights.len() - 1);
 
         if page == 0 {
             self.offset.1 = 0.0f32;
         } else {
-            self.offset.1 = self.cumulative_heights[self.page - 1];
+            self.offset.1 = self.cumulative_heights[self.page_first - 1];
         }
 
         Ok(())
     }
 
-    pub fn page(&self) -> usize {
-        return self.page;
+    pub fn scale(&mut self, scale: f32) {
+        let config: &Config = CONFIG.get().unwrap();
+        let terminal_size_lock: RwLockReadGuard<Winsize> =
+            TERMINAL_SIZE.get().unwrap().read().unwrap();
+
+        self.scale += scale;
+        self.scale = f32::max(self.scale, config.viewer.scale_min);
+        self.page_view = self.offset2page(
+            self.offset.1 + terminal_size_lock.ws_ypixel as f32 * 0.5 / self.scale,
+        );
+        self.page_view = usize::min(self.page_view, self.cumulative_heights.len() - 1);
+    }
+
+    pub fn get_scale(&self) -> f32 {
+        return self.scale;
+    }
+
+    pub fn page_first(&self) -> usize {
+        return self.page_first;
+    }
+
+    pub fn page_view(&self) -> usize {
+        return self.page_view;
     }
 
     pub fn offset(&self) -> (f32, f32) {
@@ -91,7 +127,6 @@ impl ViewerOffset {
 pub struct Viewer {
     pub file: String,
     pub thread_render: Option<JoinHandle<Result<(), String>>>,
-    pub scale: f32,
 
     pub reload_initiator: Option<Sender<()>>,
     reload_informer_broadcast: Option<UnboundedBroadcast<()>>,
@@ -102,7 +137,7 @@ pub struct Viewer {
     image_channel: Option<Receiver<(usize, Option<Arc<RwLock<Image>>>)>>,
     pub rerender_instructor: Option<Receiver<()>>,
     pub rerender_initializer: Option<Sender<()>>,
-    pub offset: Arc<Mutex<ViewerOffset>>,
+    pub offset: Arc<RwLock<ViewerOffset>>,
     pub images: HashMap<usize, Arc<RwLock<Image>>>,
     invalidated: HashMap<usize, ()>,
     scheduled4render: HashMap<usize, ()>,
@@ -112,11 +147,9 @@ pub struct Viewer {
 
 impl Viewer {
     pub fn new(file: &str) -> Result<Self, String> {
-        let config: &Config = CONFIG.get().unwrap();
         let viewer: Viewer = Self {
             file: file.to_string(),
             thread_render: None,
-            scale: config.viewer.scale_default,
             reload_initiator: None,
             reload_informer_broadcast: None,
             reload_informer_global: None,
@@ -125,7 +158,7 @@ impl Viewer {
             image_channel: None,
             rerender_instructor: None,
             rerender_initializer: None,
-            offset: Arc::new(Mutex::new(ViewerOffset::new(Vec::new()))),
+            offset: Arc::new(RwLock::new(ViewerOffset::new(Vec::new()))),
             images: HashMap::new(),
             invalidated: HashMap::new(),
             scheduled4render: HashMap::new(),
@@ -154,7 +187,7 @@ impl Viewer {
         self.rerender_initializer = Some(sender_rerender.clone());
 
         /* ======================== Thread rendering PDF pages ======================= */
-        let offset: Arc<Mutex<ViewerOffset>> = self.offset.clone();
+        let offset: Arc<RwLock<ViewerOffset>> = self.offset.clone();
         let file: String = self.file.clone();
         let sender_rerender1: Sender<()> = sender_rerender.clone();
         let informer_broadcast: UnboundedBroadcast<()> =
@@ -206,7 +239,7 @@ impl Viewer {
                         );
                     }
                     {
-                        offset.lock().unwrap().cumulative_heights =
+                        offset.write().unwrap().cumulative_heights =
                             cumulative_heights.to_owned();
                     }
 
@@ -282,7 +315,7 @@ impl Viewer {
          * later check if there occured errors during the display */
         let mut displayed: Vec<usize> = Vec::new();
         let config: &Config = CONFIG.get().unwrap();
-        let offset_lock: MutexGuard<ViewerOffset> = self.offset.lock().unwrap();
+        let offset_lock: RwLockReadGuard<ViewerOffset> = self.offset.read().unwrap();
 
         macro_rules! load_or_display {
             ($page:expr, $offset:expr, $scale:expr, $preload:expr) => {
@@ -370,7 +403,7 @@ impl Viewer {
         }
 
         /* The index of the first rendered page */
-        let mut page_index: usize = offset_lock.page();
+        let mut page_index: usize = offset_lock.page_first();
         if offset_lock.cumulative_heights.len() <= page_index {
             return Ok(displayed);
         }
@@ -389,12 +422,17 @@ impl Viewer {
         }
 
         /* Display the first page which is special because of extra offset calculation */
-        load_or_display!(page_index, -page_offset * self.scale, self.scale, false);
+        load_or_display!(
+            page_index,
+            -page_offset * offset_lock.get_scale(),
+            offset_lock.get_scale(),
+            false
+        );
         let mut displayed_offset: f32 = (offset_lock
             .page_height(page_index)
             .map_err(|x| format!("Could not retrieve page height: {}", x))?
             - page_offset)
-            * self.scale;
+            * offset_lock.get_scale();
 
         page_index += 1;
 
@@ -403,11 +441,16 @@ impl Viewer {
             < TERMINAL_SIZE.get().unwrap().read().unwrap().ws_ypixel as f32
             && page_index < offset_lock.cumulative_heights.len()
         {
-            load_or_display!(page_index, displayed_offset, self.scale, false);
+            load_or_display!(
+                page_index,
+                displayed_offset,
+                offset_lock.get_scale(),
+                false
+            );
             displayed_offset += offset_lock
                 .page_height(page_index)
                 .map_err(|x: String| format!("Could not retrieve page height: {}", x))?
-                * self.scale;
+                * offset_lock.get_scale();
             page_index += 1;
         }
 

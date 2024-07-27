@@ -6,7 +6,7 @@ use std::sync::{
 use crate::{drivers::graphics::*, Config, CONFIG, IMAGE_PADDING, TERMINAL_SIZE};
 
 use mupdf::Pixmap;
-use nix::libc::winsize;
+use nix::pty::Winsize;
 
 pub struct Image {
     id: usize,
@@ -65,14 +65,17 @@ impl Image {
         Ok(image)
     }
 
+    #[allow(dead_code)]
     pub fn id(&self) -> usize {
         return self.id;
     }
 
+    #[allow(dead_code)]
     pub fn size(&self) -> usize {
         return self.data.len();
     }
-
+    
+    #[allow(dead_code)]
     pub fn check(&self) -> Result<(), String> {
         /* The first pixels should be invisible and therefore we have an easy if
          * the image still exists */
@@ -93,7 +96,7 @@ impl Image {
         let (padding_left, padding_right): (f64, f64);
         let (cropx, cropy, cropw, croph): (usize, usize, usize, usize);
 
-        let terminal_size: RwLockReadGuard<winsize> =
+        let terminal_size: RwLockReadGuard<Winsize> =
             TERMINAL_SIZE.get().unwrap().read().unwrap();
 
         pxpercol = terminal_size.ws_xpixel as f64 / terminal_size.ws_col as f64;
@@ -117,6 +120,10 @@ impl Image {
             + self.dimensions.1 as f64 * scale / config.viewer.render_precision)
             / pxperrow;
 
+        /* Round up to the nearest whole col and row so that is guaranteed that the
+         * the whole image is rendered without being shrinked down. `padding_*` values
+         * tell how much of the image's invinsible padding should be included at each
+         * side when displaying the image on an area of integer rows and column */
         padding_left =
             (col0 - col0.floor()) * pxpercol * config.viewer.render_precision / scale;
         padding_right =

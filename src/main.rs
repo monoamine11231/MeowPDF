@@ -19,19 +19,17 @@ use crate::config::*;
 mod bar;
 use crate::bar::*;
 
-use std::fs::{File, OpenOptions};
 use std::hash::RandomState;
 use std::hash::{BuildHasher, Hasher};
+use std::io::stdin;
 use std::io::Read;
 use std::io::Stdin;
-use std::io::{stdin, Write};
 use std::ops::Deref;
 use std::path::Path;
 use std::sync::{MutexGuard, RwLock, RwLockWriteGuard};
 use std::time::Duration;
 use std::{sync::Mutex, thread};
 
-use nix::libc;
 use nix::sys::termios::Termios;
 
 use notify::RecursiveMode;
@@ -123,11 +121,11 @@ fn main() {
     /* ==================== Thread notifying terminal size change ==================== */
     let (sender_winsize, receive_winsize) = unbounded::<()>();
     thread::spawn(move || {
-        let mut wz: libc::winsize = terminal_tui_get_dimensions().unwrap();
+        let mut wz: Winsize = terminal_tui_get_dimensions().unwrap();
         loop {
             thread::sleep(Duration::from_millis(100));
 
-            let tmp: libc::winsize = terminal_tui_get_dimensions().unwrap();
+            let tmp: Winsize = terminal_tui_get_dimensions().unwrap();
             if tmp == wz {
                 continue;
             }
@@ -176,8 +174,7 @@ fn main() {
         .watch(Path::new(file.as_str()), RecursiveMode::NonRecursive)
         .expect("Could not start watching file changes for the given file");
 
-    let mut bar: Bar = Bar::new();
-    // viewer.offset.lock().unwrap().jump(10).unwrap();
+    let bar: Bar = Bar::new();
 
     /* ============================== Main program loop ============================== */
     'main: loop {
@@ -201,8 +198,8 @@ fn main() {
         }
 
         /* Since displaying pages is a bit slow, handle all the key events
-            * that were produced in the meantime. This creates an illusion that
-            * no delay exists (ish) */
+         * that were produced in the meantime. This creates an illusion that
+         * no delay exists (ish) */
         while let Ok(key) = receive_key.try_recv() {
             key_processor!(key);
         }
@@ -233,52 +230,34 @@ fn main() {
 fn handle_key(key: TerminalKey, viewer: &mut Viewer) -> bool {
     /* `true` indicates that the caller should exit *safely* the current process */
     let config: &Config = CONFIG.get().unwrap();
+    let mut offset_lock: RwLockWriteGuard<ViewerOffset> = viewer.offset.write().unwrap();
     let res: bool = match key {
         TerminalKey::CTRLC
         | TerminalKey::CTRLD
         | TerminalKey::OTHER(b'q')
         | TerminalKey::OTHER(b'Q') => true,
         TerminalKey::UP => {
-            viewer
-                .offset
-                .lock()
-                .unwrap()
-                .scroll((0.0f32, config.viewer.scroll_speed));
+            offset_lock.scroll((0.0f32, config.viewer.scroll_speed));
             return false;
         }
         TerminalKey::DOWN => {
-            viewer
-                .offset
-                .lock()
-                .unwrap()
-                .scroll((0.0f32, -config.viewer.scroll_speed));
+            offset_lock.scroll((0.0f32, -config.viewer.scroll_speed));
             return false;
         }
         TerminalKey::LEFT => {
-            viewer
-                .offset
-                .lock()
-                .unwrap()
-                .scroll((-config.viewer.scroll_speed, 0.0f32));
+            offset_lock.scroll((-config.viewer.scroll_speed, 0.0f32));
             return false;
         }
         TerminalKey::RIGHT => {
-            viewer
-                .offset
-                .lock()
-                .unwrap()
-                .scroll((config.viewer.scroll_speed, 0.0f32));
+            offset_lock.scroll((config.viewer.scroll_speed, 0.0f32));
             return false;
         }
         TerminalKey::OTHER(b'+') => {
-            viewer.scale += config.viewer.scale_amount;
+            offset_lock.scale(config.viewer.scale_amount);
             return false;
         }
         TerminalKey::OTHER(b'-') => {
-            viewer.scale -= config.viewer.scale_amount;
-            if viewer.scale < config.viewer.scale_min {
-                viewer.scale = config.viewer.scale_min;
-            }
+            offset_lock.scale(-config.viewer.scale_amount);
             return false;
         }
         _ => false,

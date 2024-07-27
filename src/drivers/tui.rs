@@ -1,4 +1,4 @@
-use nix::libc;
+use nix::pty::Winsize;
 use nix::sys::termios::*;
 use std::fs::File;
 use std::io::{stdout, Stdout, Write};
@@ -65,9 +65,9 @@ pub fn terminal_tui_clear() {
     handle.flush().unwrap();
 }
 
-pub fn terminal_tui_get_dimensions() -> Result<libc::winsize, String> {
-    let mut sz: libc::winsize;
-    let res: nix::Result<libc::c_int>;
+pub fn terminal_tui_get_dimensions() -> Result<Winsize, String> {
+    let mut sz: Winsize;
+    let res: nix::Result<i32>;
     unsafe {
         sz = MaybeUninit::zeroed().assume_init();
         res = ioctl::terminal_size(1, &mut sz);
@@ -84,8 +84,13 @@ pub fn terminal_tui_get_dimensions() -> Result<libc::winsize, String> {
 }
 
 mod ioctl {
-    use nix::ioctl_read_bad;
-    use nix::libc;
+    use nix::{ioctl_read_bad, pty::Winsize};
+    /* Big thanks to
+     * https://github.com/nix-rust/nix/issues/201#issuecomment-154902042 */
+    #[cfg(any(target_os = "macos", target_os = "freebsd"))]
+    const TIOCGWINSZ: libc::c_ulong = 0x40087468;
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    const TIOCGWINSZ: u64 = 0x5413;
 
-    ioctl_read_bad!(terminal_size, libc::TIOCGWINSZ, libc::winsize);
+    ioctl_read_bad!(terminal_size, TIOCGWINSZ, Winsize);
 }
