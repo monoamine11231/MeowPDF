@@ -1,6 +1,6 @@
 use std::{
     collections::{HashMap, VecDeque},
-    sync::{Arc, RwLock, RwLockReadGuard},
+    sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard},
     thread::{self, JoinHandle},
 };
 
@@ -17,17 +17,19 @@ pub struct ViewerOffset {
     page_first: usize,  /* The first page in the view */
     page_view: usize,   /* The page in the middle */
     offset: (f32, f32), /* Offset is given in page size units ≈ pixels */
+    max_page_width: f32,
     cumulative_heights: Vec<f32>,
 }
 
 impl ViewerOffset {
-    pub fn new(cumulative_heights: Vec<f32>) -> Self {
+    pub fn new(max_page_width: f32, cumulative_heights: Vec<f32>) -> Self {
         let config: &Config = CONFIG.get().unwrap();
         Self {
             scale: config.viewer.scale_default,
             page_first: 0,
             page_view: 0,
             offset: (0.0f32, 0.0f32),
+            max_page_width: max_page_width,
             cumulative_heights: cumulative_heights,
         }
     }
@@ -47,17 +49,46 @@ impl ViewerOffset {
         index
     }
 
-    pub fn scroll(&mut self, amount: (f32, f32)) {
+    fn bound_viewer(&mut self) {
+        let config: &Config = CONFIG.get().unwrap();
+
         let terminal_size_lock: RwLockReadGuard<Winsize> =
             TERMINAL_SIZE.get().unwrap().read().unwrap();
 
-        self.offset.0 += amount.0;
-        self.offset.1 += amount.1;
+        self.scale = f32::max(self.scale, config.viewer.scale_min);
+        self.offset.0 = f32::max(
+            self.offset.0,
+            f32::min(
+                0.0f32,
+                terminal_size_lock.ws_xpixel as f32 - self.max_page_width * self.scale,
+            ),
+        );
+        self.offset.0 = f32::min(
+            self.offset.0,
+            f32::max(
+                0.0f32,
+                terminal_size_lock.ws_xpixel as f32 - self.max_page_width * self.scale,
+            ),
+        );
+        let max_yoffset: f32 = f32::max(
+            -10.0f32,
+            self.cumulative_heights[self.cumulative_heights.len() - 1]
+                - terminal_size_lock.ws_ypixel as f32 / self.scale,
+        );
+        self.offset.1 = f32::max(self.offset.1, -10.0f32);
+        self.offset.1 = f32::min(self.offset.1, max_yoffset);
 
         self.page_first = self.offset2page(self.offset.1);
         self.page_view = self.offset2page(
             self.offset.1 + terminal_size_lock.ws_ypixel as f32 * 0.5 / self.scale,
         );
+        self.page_view = usize::min(self.page_view, self.cumulative_heights.len() - 1);
+    }
+
+    pub fn scroll(&mut self, amount: (f32, f32)) {
+        self.offset.0 += amount.0;
+        self.offset.1 += amount.1;
+        self.bound_viewer();
     }
 
     pub fn jump(&mut self, page: usize) -> Result<(), String> {
@@ -77,16 +108,8 @@ impl ViewerOffset {
     }
 
     pub fn scale(&mut self, scale: f32) {
-        let config: &Config = CONFIG.get().unwrap();
-        let terminal_size_lock: RwLockReadGuard<Winsize> =
-            TERMINAL_SIZE.get().unwrap().read().unwrap();
-
         self.scale += scale;
-        self.scale = f32::max(self.scale, config.viewer.scale_min);
-        self.page_view = self.offset2page(
-            self.offset.1 + terminal_size_lock.ws_ypixel as f32 * 0.5 / self.scale,
-        );
-        self.page_view = usize::min(self.page_view, self.cumulative_heights.len() - 1);
+        self.bound_viewer();
     }
 
     pub fn get_scale(&self) -> f32 {
@@ -158,7 +181,7 @@ impl Viewer {
             image_channel: None,
             rerender_instructor: None,
             rerender_initializer: None,
-            offset: Arc::new(RwLock::new(ViewerOffset::new(Vec::new()))),
+            offset: Arc::new(RwLock::new(ViewerOffset::new(0f32, Vec::new()))),
             images: HashMap::new(),
             invalidated: HashMap::new(),
             scheduled4render: HashMap::new(),
@@ -196,7 +219,7 @@ impl Viewer {
             let config: &Config = CONFIG.get().unwrap();
             let mut document: Document;
             let mut cache: Vec<Page> = Vec::new();
-            let mut cumulative_heights: Vec<f32> = Vec::new();
+
             let cs: Colorspace = Colorspace::device_rgb();
             let ctm: Matrix = Matrix::new_scale(
                 config.viewer.render_precision as f32,
@@ -205,6 +228,9 @@ impl Viewer {
 
             macro_rules! reload_document {
                 () => {
+                    let mut max_page_width: f32 = -f32::INFINITY;
+                    let mut cumulative_heights: Vec<f32> = Vec::new();
+
                     document = Document::open(&file).map_err(|x| {
                         format!("Could not open the given PDF file: {}", x)
                     })?;
@@ -213,7 +239,6 @@ impl Viewer {
                         Err("The given PDF file is not a PDF!".to_string())?;
                     }
                     cache.clear();
-                    cumulative_heights.clear();
 
                     let page_count: i32 = document.page_count().map_err(|x| {
                         format!("Could not extract the number of pages: {}", x)
@@ -224,14 +249,15 @@ impl Viewer {
                             .load_page(i)
                             .map_err(|x| format!("Could not load page {}: {}", i, x))?;
 
-                        let height: f32 = page
-                            .bounds()
-                            .map_err(|x| {
-                                format!("Could not get bounds for page {}: {}", i, x)
-                            })?
-                            .height();
+                        let bounds = page.bounds().map_err(|x| {
+                            format!("Could not get bounds for page {}: {}", i, x)
+                        })?;
+
+                        let width: f32 = bounds.width();
+                        let height: f32 = bounds.height();
 
                         cache.push(page);
+                        max_page_width = f32::max(max_page_width, width);
                         cumulative_heights.push(
                             cumulative_heights.last().unwrap_or(&0.0f32)
                                 + height
@@ -239,10 +265,11 @@ impl Viewer {
                         );
                     }
                     {
-                        offset.write().unwrap().cumulative_heights =
-                            cumulative_heights.to_owned();
+                        let mut offset_lock: RwLockWriteGuard<ViewerOffset> =
+                            offset.write().unwrap();
+                        offset_lock.max_page_width = max_page_width;
+                        offset_lock.cumulative_heights = cumulative_heights.to_owned();
                     }
-
                     /* Notify that the document has been rendered */
                     let _ = informer_broadcast.send(());
                 };

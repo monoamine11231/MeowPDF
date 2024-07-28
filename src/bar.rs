@@ -4,7 +4,7 @@ use pfmt::{Fmt, FormatTable};
 use std::{
     collections::HashMap,
     io::{stdout, StdoutLock, Write},
-    sync::{MutexGuard, RwLockReadGuard},
+    sync::RwLockReadGuard,
 };
 
 #[derive(Debug)]

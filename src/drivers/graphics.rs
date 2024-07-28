@@ -6,8 +6,7 @@ use std::{
     time::Duration,
 };
 
-use crate::globals::RECEIVER_GR;
-use crate::SOFTWARE_ID;
+use crate::{RECEIVER_GR, SOFTWARE_ID};
 
 /* Should be executed only after uncooking the terminal. This method expects the
  * terminal that a non-blocking and unbuffered read from stdin is possible */
@@ -39,6 +38,7 @@ pub fn terminal_graphics_test_support() -> Result<(), String> {
     Ok(())
 }
 
+#[allow(dead_code)]
 pub fn terminal_graphics_deallocate_id(id: usize) -> Result<(), String> {
     let mut handle: StdoutLock = stdout().lock();
     write!(handle, "\x1B_Ga=d,d=I,i={};\x1B\\", id).unwrap();
