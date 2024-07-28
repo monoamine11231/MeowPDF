@@ -49,7 +49,7 @@ impl ViewerOffset {
         index
     }
 
-    fn bound_viewer(&mut self) {
+    pub fn bound_viewer(&mut self) {
         let config: &Config = CONFIG.get().unwrap();
 
         let terminal_size_lock: RwLockReadGuard<Winsize> =
@@ -269,6 +269,9 @@ impl Viewer {
                             offset.write().unwrap();
                         offset_lock.max_page_width = max_page_width;
                         offset_lock.cumulative_heights = cumulative_heights.to_owned();
+                        /* Important to recalculate the bounds e.g when a page is removed
+                         * in the PDF file update */
+                        offset_lock.bound_viewer();
                     }
                     /* Notify that the document has been rendered */
                     let _ = informer_broadcast.send(());
