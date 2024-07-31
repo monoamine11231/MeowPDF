@@ -85,6 +85,14 @@ impl ViewerOffset {
         self.page_view = usize::min(self.page_view, self.cumulative_heights.len() - 1);
     }
 
+    pub fn center_viewer(&mut self) {
+        let terminal_size_lock: RwLockReadGuard<Winsize> =
+            TERMINAL_SIZE.get().unwrap().read().unwrap();
+
+        self.offset.0 =
+            terminal_size_lock.ws_xpixel as f32 * 0.5 - self.max_page_width * self.scale * 0.5;
+    }
+
     pub fn scroll(&mut self, amount: (f32, f32)) {
         self.offset.0 += amount.0;
         self.offset.1 += amount.1;
