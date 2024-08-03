@@ -405,22 +405,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "intermpdf"
-version = "0.1.0"
-dependencies = [
- "base64",
- "crossbeam-channel",
- "dirs",
- "mupdf",
- "nix",
- "notify",
- "pfmt",
- "regex-automata",
- "serde",
- "toml",
-]
-
-[[package]]
 name = "itertools"
 version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -504,6 +488,22 @@ name = "memchr"
 version = "2.7.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6c8640c5d730cb13ebd907d8d04b52f55ac9a2eec55b440c8892f40d56c76c1d"
+
+[[package]]
+name = "meowpdf"
+version = "0.1.0"
+dependencies = [
+ "base64",
+ "crossbeam-channel",
+ "dirs",
+ "mupdf",
+ "nix",
+ "notify",
+ "pfmt",
+ "regex-automata",
+ "serde",
+ "toml",
+]
 
 [[package]]
 name = "minimal-lexical"
