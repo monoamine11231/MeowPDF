@@ -2,6 +2,7 @@ use std::{
     collections::{HashMap, VecDeque},
     sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard},
     thread::{self, JoinHandle},
+    time::SystemTime,
 };
 
 use crossbeam_channel::{select_biased, unbounded, Receiver, Sender};
@@ -9,7 +10,8 @@ use mupdf::{Colorspace, Document, Error, Matrix, Page, Pixmap};
 use nix::pty::Winsize;
 
 use crate::{
-    drivers::broadcast::UnboundedBroadcast, Config, Image, CONFIG, TERMINAL_SIZE,
+    clear_channel, drivers::broadcast::UnboundedBroadcast, Config, Image, CONFIG,
+    TERMINAL_SIZE,
 };
 
 pub struct ViewerOffset {
@@ -89,8 +91,8 @@ impl ViewerOffset {
         let terminal_size_lock: RwLockReadGuard<Winsize> =
             TERMINAL_SIZE.get().unwrap().read().unwrap();
 
-        self.offset.0 =
-            terminal_size_lock.ws_xpixel as f32 * 0.5 - self.max_page_width * self.scale * 0.5;
+        self.offset.0 = terminal_size_lock.ws_xpixel as f32 * 0.5
+            - self.max_page_width * self.scale * 0.5;
     }
 
     pub fn scroll(&mut self, amount: (f32, f32)) {
@@ -163,6 +165,8 @@ pub struct Viewer {
     reload_informer_broadcast: Option<UnboundedBroadcast<()>>,
     pub reload_informer_global: Option<Receiver<()>>,
     reload_informer_internal: Option<Receiver<()>>,
+    pub alpha_instructor: Option<Sender<()>>,
+    pub inverse_instructor: Option<Sender<()>>,
     render_scheduler: Option<Sender<usize>>, /* Page index as input */
 
     image_channel: Option<Receiver<(usize, Option<Arc<RwLock<Image>>>)>>,
@@ -185,6 +189,8 @@ impl Viewer {
             reload_informer_broadcast: None,
             reload_informer_global: None,
             reload_informer_internal: None,
+            alpha_instructor: None,
+            inverse_instructor: None,
             render_scheduler: None,
             image_channel: None,
             rerender_instructor: None,
@@ -201,6 +207,8 @@ impl Viewer {
 
     pub fn run(&mut self) -> Result<(), String> {
         let (sender_render_init, receive_render_init) = unbounded::<()>();
+        let (sender_alpha, receive_alpha) = unbounded::<()>();
+        let (sender_inverse, receive_inverse) = unbounded::<()>();
         let (sender_display, receive_display) = unbounded::<usize>();
         let (sender_image, receive_image) =
             unbounded::<(usize, Option<Arc<RwLock<Image>>>)>();
@@ -212,6 +220,8 @@ impl Viewer {
         self.reload_informer_global = Some(reload_informer_broadcast.subscribe());
         self.reload_informer_internal = Some(reload_informer_broadcast.subscribe());
         self.reload_informer_broadcast = Some(reload_informer_broadcast);
+        self.alpha_instructor = Some(sender_alpha);
+        self.inverse_instructor = Some(sender_inverse);
         self.render_scheduler = Some(sender_display.clone()); /* Will be used later */
         self.image_channel = Some(receive_image);
         self.rerender_instructor = Some(receive_rerender);
@@ -227,7 +237,12 @@ impl Viewer {
             let config: &Config = CONFIG.get().unwrap();
             let mut document: Document;
             let mut cache: Vec<Page> = Vec::new();
+            let mut alpha: f32 = 0.0f32;
+            let mut inverse: bool = false;
 
+            let mut alpha_run: SystemTime = SystemTime::now();
+            let mut reload_run: SystemTime = SystemTime::now();
+            let mut inverse_run: SystemTime = SystemTime::now();
             let cs: Colorspace = Colorspace::device_rgb();
             let ctm: Matrix = Matrix::new_scale(
                 config.viewer.render_precision as f32,
@@ -280,17 +295,49 @@ impl Viewer {
                         /* Important to recalculate the bounds e.g when a page is removed
                          * in the PDF file update */
                         offset_lock.bound_viewer();
+                        offset_lock.center_viewer();
                     }
                     /* Notify that the document has been rendered */
                     let _ = informer_broadcast.send(());
                 };
+            }
+
+            macro_rules! has_elapsed {
+                ($var:ident) => {{
+                    let elapsed = $var.elapsed().unwrap().as_millis();
+                    if elapsed >= 500 {
+                        $var = SystemTime::now();
+                    }
+                    elapsed >= 500
+                }};
             }
             reload_document!();
 
             loop {
                 select_biased! {
                     recv(receive_render_init) -> _ => {
+                        while !has_elapsed!(reload_run) {}
                         reload_document!();
+
+                        clear_channel!(receive_display);
+                    },
+                    recv(receive_alpha) -> _ => {
+                        if !has_elapsed!(alpha_run) {
+                            continue;
+                        }
+
+                        alpha = !(alpha != 0.0) as u32 as f32;
+                        clear_channel!(receive_display);
+                        let _ = informer_broadcast.send(());
+                    },
+                    recv(receive_inverse) -> _ => {
+                        if !has_elapsed!(inverse_run) {
+                            continue;
+                        }
+
+                        inverse = !inverse;
+                        clear_channel!(receive_display);
+                        let _ = informer_broadcast.send(());
                     },
                     recv(receive_display) -> page => {
                         /* Do not raise exceptions. This can become a reality when the
@@ -311,13 +358,23 @@ impl Viewer {
 
                         /* Load the image */
                         let data: Result<Pixmap, Error> =
-                            cache[page_unwrap].to_pixmap(&ctm, &cs, 0.0f32, false);
+                            cache[page_unwrap].to_pixmap(&ctm, &cs, alpha, false);
 
                         if data.is_err() {
                             continue;
                         }
 
-                        let res: Result<Image, String> = Image::new(&data.unwrap());
+                        let mut data_unwrapped: Pixmap = data.unwrap();
+                        let n: usize = data_unwrapped.n() as usize;
+                        if inverse {
+                            for pixel in data_unwrapped.samples_mut().chunks_mut(n) {
+                                pixel[0] = 255 - pixel[0];
+                                pixel[1] = 255 - pixel[1];
+                                pixel[2] = 255 - pixel[2];
+                            }
+                        }
+
+                        let res: Result<Image, String> = Image::new(&data_unwrapped);
                         if res.is_err() {
                             continue;
                         }
@@ -327,7 +384,7 @@ impl Viewer {
                         * close the application */
                         let _ = sender_image
                             .send((page_unwrap, Some(Arc::new(RwLock::new(image)))));
-                        let _ = sender_rerender1.send(());
+                        sender_rerender1.send(()).unwrap();
                     }
                 }
             }
@@ -356,7 +413,7 @@ impl Viewer {
         let offset_lock: RwLockReadGuard<ViewerOffset> = self.offset.read().unwrap();
 
         macro_rules! load_or_display {
-            ($page:expr, $offset:expr, $scale:expr, $preload:expr) => {
+            ($page:expr, $offset:expr, $scale:expr, $preload:expr) => {{
                 if (!self.images.contains_key(&$page)
                     || self.invalidated.contains_key(&$page))
                     && !self.scheduled4render.contains_key(&$page)
@@ -387,18 +444,35 @@ impl Viewer {
                         }
                     }
                 }
-            };
+            }};
         }
 
         macro_rules! remove_image {
             ($page:expr) => {
                 self.memory_used -= self.images[&$page].read().unwrap().size();
                 self.images.remove(&$page);
+                self.invalidated.remove(&$page);
             };
         }
 
         let image_channel: &mut Receiver<(usize, Option<Arc<RwLock<Image>>>)> =
             self.image_channel.as_mut().unwrap();
+
+        let reload: bool = self
+            .reload_informer_internal
+            .clone()
+            .unwrap()
+            .try_recv()
+            .is_ok();
+
+        if reload {
+            self.invalidated.clear();
+            self.scheduled4render.clear();
+            for k in self.images.keys() {
+                self.invalidated.insert(*k, ());
+            }
+            clear_channel!(image_channel);
+        }
 
         /* Fetch all the images and put them into the hashmap.
          * Delete old ones if data limit has been exceeded */
@@ -409,7 +483,9 @@ impl Viewer {
                 continue;
             }
 
-            self.invalidated.remove(&page);
+            if self.invalidated.contains_key(&page) {
+                remove_image!(page);
+            }
 
             let image_unwrapped: Arc<RwLock<Image>> = image.unwrap();
             self.memory_used += image_unwrapped.read().unwrap().size();
@@ -427,23 +503,15 @@ impl Viewer {
             }
         }
 
-        let reload: bool = self
-            .reload_informer_internal
-            .clone()
-            .unwrap()
-            .try_recv()
-            .is_ok();
-
-        if reload {
-            for k in self.images.keys() {
-                self.invalidated.insert(*k, ());
-            }
-        }
-
         /* The index of the first rendered page */
         let mut page_index: usize = offset_lock.page_first();
         if offset_lock.cumulative_heights.len() <= page_index {
             return Ok(displayed);
+        }
+
+        /* Preload N pages before the first displayed page to avoid flickering pages */
+        for i in 0..usize::min(config.viewer.pages_preloaded, page_index) {
+            load_or_display!(page_index - 1 - i, 0, 0, true);
         }
 
         /* Offset inside target page */
@@ -453,11 +521,6 @@ impl Viewer {
         } else {
             offset_lock.cumulative_heights[page_index - 1]
         };
-
-        /* Preload 1 page before the first displayed page to avoid flickering pages */
-        if page_index > 0 {
-            load_or_display!(page_index - 1, 0, 0, true);
-        }
 
         /* Display the first page which is special because of extra offset calculation */
         load_or_display!(

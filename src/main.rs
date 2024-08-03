@@ -260,6 +260,14 @@ fn handle_key(key: TerminalKey, viewer: &mut Viewer) -> bool {
             offset_lock.scale(-config.viewer.scale_amount);
             return false;
         }
+        TerminalKey::OTHER(b'a') | TerminalKey::OTHER(b'A') => {
+            let _ = viewer.alpha_instructor.as_ref().unwrap().send(());
+            return false;
+        },
+        TerminalKey::OTHER(b'i') | TerminalKey::OTHER(b'I') => {
+            let _ = viewer.inverse_instructor.as_ref().unwrap().send(());
+            return false;
+        }
         TerminalKey::OTHER(b'c') | TerminalKey::OTHER(b'C') => {
             offset_lock.center_viewer();
             return false;

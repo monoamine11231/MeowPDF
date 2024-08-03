@@ -55,12 +55,12 @@ impl Image {
         );
 
         let image: Image = Self {
-            id: ID.load(Ordering::Relaxed),
+            id: ID.load(Ordering::Acquire),
             dimensions: (pixmap.width() as i32, pixmap.height() as i32),
             data: data,
         };
 
-        ID.store(ID.load(Ordering::Relaxed) + 1, Ordering::Relaxed);
+        ID.store(ID.load(Ordering::Acquire) + 1, Ordering::Release);
         image.transfer()?;
         Ok(image)
     }
@@ -74,7 +74,7 @@ impl Image {
     pub fn size(&self) -> usize {
         return self.data.len();
     }
-    
+
     #[allow(dead_code)]
     pub fn check(&self) -> Result<(), String> {
         /* The first pixels should be invisible and therefore we have an easy if

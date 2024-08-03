@@ -3,14 +3,14 @@ use crossbeam_channel::Receiver;
 use nix::pty::Winsize;
 use std::sync::{Mutex, OnceLock, RwLock};
 
-pub const CONFIG_FILENAME: &'static str = "intermpdf";
+pub const CONFIG_FILENAME: &'static str = "meowpdf";
 pub const DEFAULT_CONFIG: &'static str = r#"
 [viewer]
 # Determines how fast the document is scrolled
-scroll_speed = 30.0
+scroll_speed = 20.0
 # Determines at what precision the pages are rendered
 render_precision = 1.5
-# Determines the image data limit that the software holds in RAM
+# Determines the image data limit that the software holds in RAM (bytes)
 memory_limit = 314572800
 # Determines the default scale of the viewer when starting the viewer
 scale_default = 0.5
@@ -21,7 +21,7 @@ scale_amount = 0.5
 # Determines the margin on the bottom of each page
 margin_bottom = 10.0
 # Determines the amount of pages that are preloaded in advance 
-pages_preloaded = 6
+pages_preloaded = 3
 [bar]
 # Determines the position of the bar. Valid values are `top` and `bottom`
 position = "bottom"
@@ -41,5 +41,12 @@ pub static SOFTWARE_ID: OnceLock<String> = OnceLock::new();
 macro_rules! chan_has {
     ($chan:expr) => {
         $chan.peek().is_some()
+    };
+}
+
+#[macro_export]
+macro_rules! clear_channel {
+    ($chan:ident) => {
+        while let Ok(_) = $chan.try_recv() {}
     };
 }
