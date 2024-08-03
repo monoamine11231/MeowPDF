@@ -24,7 +24,7 @@ pub fn terminal_graphics_test_support() -> Result<(), String> {
         .unwrap()
         .lock()
         .unwrap()
-        .recv_timeout(Duration::from_millis(100))
+        .recv_timeout(Duration::from_millis(1000))
         .map_err(|x| {
             format!("Could not receive from Graphics Response channel: {}", x)
         })?;
@@ -55,18 +55,25 @@ pub fn terminal_graphics_transfer_bitmap(
     data: &[u8],
     alpha: bool,
 ) -> Result<(), String> {
+    let mut handle: StdoutLock = stdout().lock();
     let mut tmp_file_path: PathBuf = std::env::temp_dir();
+
     tmp_file_path.push(format!(
-        "tty-graphics-protocol-{}",
-        SOFTWARE_ID.get().unwrap()
+        "tty-graphics-protocol-{}-{}",
+        SOFTWARE_ID.get().unwrap(),
+        id
     ));
+
+    /* Wait for the file to get automatically get deleted by Kitty from a previous
+     * render instance of this exact image with the same ID. If this is not done
+     * this will lead to extreme bugs where the Kitty terminal can crash */
+    while tmp_file_path.as_path().exists() {}
 
     {
         let mut tmp_file: File = File::create(tmp_file_path.as_path()).unwrap();
         tmp_file.write(data).unwrap();
     }
 
-    let mut handle: StdoutLock = stdout().lock();
 
     /* First chunk with bitmap metadata */
     write!(
