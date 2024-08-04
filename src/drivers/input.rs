@@ -12,7 +12,7 @@ use regex_automata::{
     Input, MatchError, MatchKind, PatternID,
 };
 
-type TokenParser = fn(&[u8]) -> StdinInput;
+type TokenParser = fn(&[u8]) -> Option<StdinInput>;
 const REGEX_SET: &[(&str, TokenParser)] = &[
     ("^\x03", parsers::parse_ctrlc),
     ("^\x04", parsers::parse_ctrld),
@@ -70,11 +70,11 @@ impl StdinDFA {
         if self.dfa.is_match_state(next_eoi) {
             let index: PatternID = self.dfa.match_pattern(next_eoi, 0);
             let parser: TokenParser = REGEX_SET[index.as_usize()].1;
-            let token: StdinInput = parser(self.input.as_slice());
+            let token: Option<StdinInput> = parser(self.input.as_slice());
 
             self.input.clear();
             self.state = None;
-            return Some(token);
+            return token;
         }
         if wall_state!(self.dfa, self.state.unwrap()) {
             self.input.clear();
@@ -188,33 +188,33 @@ impl GraphicsResponse {
 mod parsers {
     use super::{GraphicsResponse, MouseEvent, MouseEventType, StdinInput, TerminalKey};
 
-    pub fn parse_ctrlc(_: &[u8]) -> StdinInput {
-        StdinInput::TerminalKey(TerminalKey::CTRLC)
+    pub fn parse_ctrlc(_: &[u8]) -> Option<StdinInput> {
+        Some(StdinInput::TerminalKey(TerminalKey::CTRLC))
     }
 
-    pub fn parse_ctrld(_: &[u8]) -> StdinInput {
-        StdinInput::TerminalKey(TerminalKey::CTRLD)
+    pub fn parse_ctrld(_: &[u8]) -> Option<StdinInput> {
+        Some(StdinInput::TerminalKey(TerminalKey::CTRLD))
     }
 
-    pub fn parse_alphanumerical(x: &[u8]) -> StdinInput {
-        StdinInput::TerminalKey(TerminalKey::OTHER(x[0]))
+    pub fn parse_alphanumerical(x: &[u8]) -> Option<StdinInput> {
+        Some(StdinInput::TerminalKey(TerminalKey::OTHER(x[0])))
     }
 
-    pub fn parse_udrl_key(x: &[u8]) -> StdinInput {
+    pub fn parse_udrl_key(x: &[u8]) -> Option<StdinInput> {
         const KEY_LU: [TerminalKey; 4] = [
             TerminalKey::UP,
             TerminalKey::DOWN,
             TerminalKey::RIGHT,
             TerminalKey::LEFT,
         ];
-        StdinInput::TerminalKey(KEY_LU[*x.last().unwrap() as usize - 'A' as usize])
+        Some(StdinInput::TerminalKey(KEY_LU[*x.last().unwrap() as usize - 'A' as usize]))
     }
 
-    pub fn parse_mouse(x: &[u8]) -> StdinInput {
+    pub fn parse_mouse(x: &[u8]) -> Option<StdinInput> {
         let s: &str = std::str::from_utf8(&x[3..x.len() - 1]).unwrap();
         let data: Vec<&str> = s.split(';').collect();
         if data.len() != 3 {
-            panic!("Invalid xTerm mouse command given: {:?}", x);
+            return None;
         }
 
         let press: bool = x[x.len() - 1] == b'M';
@@ -222,46 +222,43 @@ mod parsers {
         let x: usize = data[1].parse::<usize>().expect(format!("{}", s).as_str());
         let y: usize = data[2].parse::<usize>().expect(format!("{}", s).as_str());
 
-        let res: StdinInput = match (code, press) {
-            (0, true) => StdinInput::MouseEvent(MouseEvent {
+        let res: Option<StdinInput> = match (code, press) {
+            (0, true) => Some(StdinInput::MouseEvent(MouseEvent {
                 x: x,
                 y: y,
                 event: MouseEventType::LCLICK,
-            }),
-            (0, false) => StdinInput::MouseEvent(MouseEvent {
+            })),
+            (0, false) => Some(StdinInput::MouseEvent(MouseEvent {
                 x: x,
                 y: y,
                 event: MouseEventType::LRELEASE,
-            }),
-            (2, true) => StdinInput::MouseEvent(MouseEvent {
+            })),
+            (2, true) => Some(StdinInput::MouseEvent(MouseEvent {
                 x: x,
                 y: y,
                 event: MouseEventType::RCLICK
-            }),
-            (2, false) => StdinInput::MouseEvent(MouseEvent {
+            })),
+            (2, false) => Some(StdinInput::MouseEvent(MouseEvent {
                 x: x,
                 y: y,
                 event: MouseEventType::RRELEASE
-            }),
-            (35, true) | (35, false) => StdinInput::MouseEvent(MouseEvent {
+            })),
+            (35, true) | (35, false) => Some(StdinInput::MouseEvent(MouseEvent {
                 x: x,
                 y: y,
                 event: MouseEventType::HOVER,
-            }),
-            (64, true) | (64, false) => StdinInput::TerminalKey(TerminalKey::DOWN),
-            (65, true) | (65, false) => StdinInput::TerminalKey(TerminalKey::UP),
-            (66, true) | (66, false) => StdinInput::TerminalKey(TerminalKey::RIGHT),
-            (67, true) | (67, false) => StdinInput::TerminalKey(TerminalKey::LEFT),
-            _ => panic!(
-                "Invalid xTerm mouse command given: Invalid mouse event {}",
-                code
-            ),
+            })),
+            (64, true) | (64, false) => Some(StdinInput::TerminalKey(TerminalKey::DOWN)),
+            (65, true) | (65, false) => Some(StdinInput::TerminalKey(TerminalKey::UP)),
+            (66, true) | (66, false) => Some(StdinInput::TerminalKey(TerminalKey::RIGHT)),
+            (67, true) | (67, false) => Some(StdinInput::TerminalKey(TerminalKey::LEFT)),
+            _ => None
         };
 
         res
     }
 
-    pub fn parse_graphics_response(x: &[u8]) -> StdinInput {
-        StdinInput::GraphicsResponse(GraphicsResponse::new(&x[3..x.len() - 2]))
+    pub fn parse_graphics_response(x: &[u8]) -> Option<StdinInput> {
+        Some(StdinInput::GraphicsResponse(GraphicsResponse::new(&x[3..x.len() - 2])))
     }
 }
