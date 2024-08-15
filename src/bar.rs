@@ -1,10 +1,7 @@
 use crate::{Config, ConfigBarPosition, Viewer, ViewerOffset, CONFIG, TERMINAL_SIZE};
 use nix::pty::Winsize;
-use pfmt::{Fmt, FormatTable};
 use std::{
-    collections::HashMap,
-    io::{stdout, StdoutLock, Write},
-    sync::RwLockReadGuard,
+    collections::HashMap, io::{stdout, StdoutLock, Write}, iter::Peekable, str::Chars, sync::RwLockReadGuard
 };
 
 #[derive(Debug)]
@@ -52,40 +49,40 @@ fn bar_build_string(bar: &Bar, viewer: &Viewer) -> Result<String, String> {
     let config: &Config = CONFIG.get().unwrap();
     let offset_lock: RwLockReadGuard<ViewerOffset> = viewer.offset.read().unwrap();
 
-    let mut table: HashMap<&str, Box<dyn Fmt>> = HashMap::new();
-    let mode: &str = match bar.mode {
-        BarMode::VIEW => "VIEW   ",
-        BarMode::COMMAND(_) => "COMMAND",
-    };
-    table.insert("mode", Box::new(mode));
-    table.insert("file", Box::new(String::from(viewer.file.clone())));
-    table.insert(
-        "scale",
-        Box::new(format!("{:.0}%", offset_lock.get_scale() * 100.0f32)),
-    );
-    table.insert("page", Box::new(format!("{}", offset_lock.page_view())));
+    // let mut table: HashMap<&str, Box<dyn Fmt>> = HashMap::new();
+    // let mode: &str = match bar.mode {
+    //     BarMode::VIEW => "VIEW   ",
+    //     BarMode::COMMAND(_) => "COMMAND",
+    // };
+    // table.insert("mode", Box::new(mode));
+    // table.insert("file", Box::new(String::from(viewer.file.clone())));
+    // table.insert(
+    //     "scale",
+    //     Box::new(format!("{:.0}%", offset_lock.get_scale() * 100.0f32)),
+    // );
+    // table.insert("page", Box::new(format!("{}", offset_lock.page_view())));
 
-    let mut res: String = String::new();
-    res.push_str(
-        table
-            .format(config.bar.segment_mode.as_str())
-            .map_err(|x| format!("Could not build bar: {:?}", x))?
-            .as_str(),
-    );
+    // let mut res: String = String::new();
+    // res.push_str(
+    //     table
+    //         .format(config.bar.segment_mode.as_str())
+    //         .map_err(|x| format!("Could not build bar: {:?}", x))?
+    //         .as_str(),
+    // );
 
-    res.push_str(
-        table
-            .format(config.bar.segment_file.as_str())
-            .map_err(|x| format!("Could not build bar: {:?}", x))?
-            .as_str(),
-    );
+    // res.push_str(
+    //     table
+    //         .format(config.bar.segment_file.as_str())
+    //         .map_err(|x| format!("Could not build bar: {:?}", x))?
+    //         .as_str(),
+    // );
 
-    res.push_str(
-        table
-            .format(config.bar.segment_scale.as_str())
-            .map_err(|x| format!("Could not build bar: {:?}", x))?
-            .as_str(),
-    );
+    // res.push_str(
+    //     table
+    //         .format(config.bar.segment_scale.as_str())
+    //         .map_err(|x| format!("Could not build bar: {:?}", x))?
+    //         .as_str(),
+    // );
 
-    Ok(res)
+    Ok("".to_string())
 }

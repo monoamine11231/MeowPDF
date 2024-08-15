@@ -30,15 +30,27 @@ pub struct ConfigViewer {
 #[derive(Debug, Deserialize)]
 pub struct ConfigBar {
     pub position: ConfigBarPosition,
-    pub segment_mode: String,
-    pub segment_file: String,
-    pub segment_scale: String
+    pub segments: Option<Vec<ConfigBarSegment>>,
+    pub boundaries: Option<Vec<ConfigBarBoundary>>,
 }
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ConfigBarPosition {
     TOP,
     BOTTOM,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ConfigBarSegment {
+    name: String,
+    content: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ConfigBarBoundary {
+    lsegments: Vec<String>,
+    rsegments: Vec<String>,
+    width: i32,
 }
 
 pub fn config_load_or_create() -> Result<Config, String> {
@@ -65,6 +77,32 @@ pub fn config_load_or_create() -> Result<Config, String> {
 
     let config_parsed: Config = toml::from_str(config_content.as_str())
         .map_err(|x| format!("Could not parse config file: {}", x))?;
+
+    /* ========================== Check constant constraints ========================= */
+    if config_parsed.viewer.render_precision <= 0.0f64 {
+        return Err(
+            "`config.viewer.render_precision` can not be negative or equal to 0!"
+                .to_string(),
+        );
+    }
+
+    if config_parsed.viewer.scale_default <= 0.0f32 {
+        return Err(
+            "`config.viewer.scale_default` can not be negative or equal to 0!"
+                .to_string(),
+        );
+    }
+
+    if config_parsed.viewer.scale_min <= 0.0f32 {
+        return Err(
+            "`config.viewer.scale_min` can not be negative or equal to 0!"
+                .to_string(),
+        );
+    }
+
+    if config_parsed.viewer.margin_bottom < 0.0f32 {
+        return Err("`config.viewer.margin_bottom` can not be negative!".to_string());
+    }
 
     Ok(config_parsed)
 }

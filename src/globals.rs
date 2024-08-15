@@ -25,9 +25,9 @@ pages_preloaded = 3
 [bar]
 # Determines the position of the bar. Valid values are `top` and `bottom`
 position = "bottom"
-segment_mode = "\u001B[48;2;0;0;255m {mode} \u001B[38;2;0;0;255m\u001B[48;2;0;255;0m\uE0B0"
-segment_file = "\u001B[38;2;255;255;255m\u001B[48;2;0;255;0m {file} \u001B[38;2;0;255;0m\u001B[48;2;255;0;0m\uE0B0"
-segment_scale = "\u001B[38;2;255;255;255m {page}"
+#segment_mode = "\u001B[48;2;0;0;255m {mode} \u001B[38;2;0;0;255m\u001B[48;2;0;255;0m\uE0B0"
+#segment_file = "\u001B[38;2;255;255;255m\u001B[48;2;0;255;0m {file} \u001B[38;2;0;255;0m\u001B[48;2;255;0;0m\uE0B0"
+#segment_scale = "\u001B[38;2;255;255;255m {page}"
 "#;
 
 /* Hate on me for those global singletons as much as you want. */
