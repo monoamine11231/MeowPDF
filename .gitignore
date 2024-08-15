@@ -5,6 +5,8 @@ test*.pdf
 main.typ
 main.pdf
 *.log
+report.json
+report.html
 
 # Added by cargo
 

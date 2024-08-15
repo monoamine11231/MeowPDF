@@ -1,24 +1,33 @@
 [package]
 name = "meowpdf"
-version = "0.1.0"
 edition = "2021"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+version = "0.1.0"
 
 [dependencies]
 base64 = "0.22.1"
-crossbeam-channel = "0.5.13"
 dirs = "5.0.1"
-mupdf = "0.4.2"
-nix = { version = "0.28.0", features = ["term", "ioctl"] }
-notify = "6.1.1"
-pfmt = "0.4.0"
-regex-automata = "0.4.7"
-serde = "1.0.204"
-toml = "0.8.15"
+mupdf = { default-features = false, version = "0.4.2" }
+notify = { features = ["crossbeam-channel"], default-features = false, version = "6.1.1" }
+regex-automata = { features = ["unicode", "syntax", "dfa", "meta"], default-features = false, version = "0.4.7" }
+serde = { default-features = false, version = "1.0.204" }
+toml = { features = ["parse"], default-features = false, version = "0.8.15" }
+
+[dependencies.crossbeam-channel]
+version = "0.5.13"
+features = []
+default-features = false
+
+[dependencies.nix]
+version = "0.28.0"
+features = ["term", "ioctl"]
+
+[dependencies.textwrap]
+version = "0.16.1"
+features = []
+default-features = false
 
 [profile.release]
-panic = 'abort'
+panic = "abort"
 
 [profile.dev]
-panic = 'abort'
+panic = "abort"
