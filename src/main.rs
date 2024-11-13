@@ -208,7 +208,7 @@ fn main() {
             RECEIVER_GR.get().unwrap().lock().unwrap();
 
         terminal_tui_clear();
-        bar.render(&viewer).unwrap();
+        // bar.render(&viewer).unwrap();
 
         let displayed: Vec<usize> =
             viewer.display_pages().expect("Could not display pages");
@@ -270,6 +270,11 @@ fn handle_key(key: TerminalKey, viewer: &mut Viewer) -> bool {
         }
         TerminalKey::OTHER(b'c') | TerminalKey::OTHER(b'C') => {
             offset_lock.center_viewer();
+            return false;
+        }
+        TerminalKey::OTHER(b'G') => {
+            let last_page: usize = offset_lock.pages() - 1;
+            offset_lock.jump(last_page);
             return false;
         }
         _ => false,
