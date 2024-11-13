@@ -33,11 +33,12 @@ pub struct ConfigBar {
     pub segments: Option<Vec<ConfigBarSegment>>,
     pub boundaries: Option<Vec<ConfigBarBoundary>>,
 }
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum ConfigBarPosition {
     TOP,
     BOTTOM,
+    DISABLED,
 }
 
 #[derive(Debug, Deserialize)]
@@ -95,8 +96,7 @@ pub fn config_load_or_create() -> Result<Config, String> {
 
     if config_parsed.viewer.scale_min <= 0.0f32 {
         return Err(
-            "`config.viewer.scale_min` can not be negative or equal to 0!"
-                .to_string(),
+            "`config.viewer.scale_min` can not be negative or equal to 0!".to_string(),
         );
     }
 

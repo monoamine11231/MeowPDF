@@ -1,7 +1,11 @@
 use crate::{Config, ConfigBarPosition, Viewer, ViewerOffset, CONFIG, TERMINAL_SIZE};
 use nix::pty::Winsize;
 use std::{
-    collections::HashMap, io::{stdout, StdoutLock, Write}, iter::Peekable, str::Chars, sync::RwLockReadGuard
+    collections::HashMap,
+    io::{stdout, StdoutLock, Write},
+    iter::Peekable,
+    str::Chars,
+    sync::RwLockReadGuard,
 };
 
 #[derive(Debug)]
@@ -28,9 +32,13 @@ impl Bar {
             TERMINAL_SIZE.get().unwrap().read().unwrap();
         let mut handle: StdoutLock = stdout().lock();
 
+        if config.bar.position == ConfigBarPosition::DISABLED {
+            return Ok(());
+        }
         let row: u16 = match config.bar.position {
             ConfigBarPosition::TOP => 0,
             ConfigBarPosition::BOTTOM => terminal_size.ws_row,
+            _ => 0,
         };
 
         write!(
