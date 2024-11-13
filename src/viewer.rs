@@ -74,7 +74,9 @@ impl ViewerOffset {
         );
         let max_yoffset: f32 = f32::max(
             -10.0f32,
-            self.cumulative_heights[self.cumulative_heights.len() - 1]
+            self.cumulative_heights
+                .get(self.cumulative_heights.len() - 1)
+                .unwrap_or(&0.0f32)
                 - terminal_size_lock.ws_ypixel as f32 / self.scale,
         );
         self.offset.1 = f32::max(self.offset.1, -10.0f32);
@@ -84,7 +86,11 @@ impl ViewerOffset {
         self.page_view = self.offset2page(
             self.offset.1 + terminal_size_lock.ws_ypixel as f32 * 0.5 / self.scale,
         );
-        self.page_view = usize::min(self.page_view, self.cumulative_heights.len() - 1);
+        let mut min_page: usize = 0;
+        if self.cumulative_heights.len() > 0 {
+            min_page = self.cumulative_heights.len() - 1;
+        }
+        self.page_view = usize::min(self.page_view, min_page);
     }
 
     pub fn center_viewer(&mut self) {
@@ -101,6 +107,10 @@ impl ViewerOffset {
         self.bound_viewer();
     }
 
+    pub fn pages(&self) -> usize {
+        return self.cumulative_heights.len();
+    }
+
     pub fn jump(&mut self, page: usize) -> Result<(), String> {
         if page >= self.cumulative_heights.len() {
             Err("Given page number is larger than the number of pages")?;
@@ -113,6 +123,7 @@ impl ViewerOffset {
         } else {
             self.offset.1 = self.cumulative_heights[self.page_first - 1];
         }
+        self.bound_viewer();
 
         Ok(())
     }
