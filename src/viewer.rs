@@ -248,7 +248,7 @@ impl Viewer {
             let config: &Config = CONFIG.get().unwrap();
             let mut document: Document;
             let mut cache: Vec<Page> = Vec::new();
-            let mut alpha: f32 = 0.0f32;
+            let mut alpha: bool = false;
             let mut inverse: bool = false;
 
             let mut alpha_run: SystemTime = SystemTime::now();
@@ -337,7 +337,7 @@ impl Viewer {
                             continue;
                         }
 
-                        alpha = !(alpha != 0.0) as u32 as f32;
+                        alpha = !alpha;
                         clear_channel!(receive_display);
                         let _ = informer_broadcast.send(());
                     },
