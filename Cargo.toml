@@ -6,10 +6,10 @@ version = "0.1.0"
 [dependencies]
 base64 = "0.22.1"
 dirs = "5.0.1"
-mupdf = { default-features = false, version = "0.4.4" }
-notify = { features = ["crossbeam-channel"], default-features = false, version = "6.1.1" }
+mupdf = { default-features = false, version = "0.5" }
+notify = { version = "6.1.1" }
 regex-automata = { features = ["unicode", "syntax", "dfa", "meta"], default-features = false, version = "0.4.7" }
-serde = { default-features = false, version = "1.0.204" }
+serde = { version = "1.0.204", features=["derive"] }
 toml = { features = ["parse"], default-features = false, version = "0.8.15" }
 
 [dependencies.crossbeam-channel]
