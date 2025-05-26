@@ -7,6 +7,7 @@ main.pdf
 *.log
 report.json
 report.html
+dbg-err
 
 # Added by cargo
 

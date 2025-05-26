@@ -23,6 +23,11 @@ impl Image {
         let padding: usize = *IMAGE_PADDING.get().unwrap();
 
         let mut data: Vec<u8> = Vec::new();
+        data.reserve(
+            (2 * padding + pixmap.width() as usize) * padding * 8
+                + padding * 8
+                + (pixmap.samples().len() / 3) * 4,
+        );
 
         data.extend(
             std::iter::repeat(PADDING_CLR)

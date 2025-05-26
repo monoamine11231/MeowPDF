@@ -13,7 +13,7 @@ serde = { version = "1.0.204", features=["derive"] }
 toml = { features = ["parse"], default-features = false, version = "0.8.15" }
 
 [dependencies.crossbeam-channel]
-version = "0.5.13"
+version = "0.5.15"
 features = []
 default-features = false
 
