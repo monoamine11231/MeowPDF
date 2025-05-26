@@ -88,7 +88,7 @@ mod ioctl {
     /* Big thanks to
      * https://github.com/nix-rust/nix/issues/201#issuecomment-154902042 */
     #[cfg(any(target_os = "macos", target_os = "freebsd"))]
-    const TIOCGWINSZ: libc::c_ulong = 0x40087468;
+    const TIOCGWINSZ: u64 = 0x40087468;
     #[cfg(any(target_os = "linux", target_os = "android"))]
     const TIOCGWINSZ: u64 = 0x5413;
 

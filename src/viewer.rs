@@ -200,6 +200,7 @@ impl Viewer {
 
     /* ================================ Miscellaneous ================================ */
 
+
     pub fn handle_image(&mut self, page: usize, image: Option<Arc<RwLock<Image>>>) {
         macro_rules! remove_image {
             ($page:expr) => {
