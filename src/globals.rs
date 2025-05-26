@@ -1,7 +1,7 @@
 use crate::{drivers::input::GraphicsResponse, Config};
 use crossbeam_channel::Receiver;
 use nix::pty::Winsize;
-use std::sync::{Mutex, OnceLock, RwLock};
+use std::sync::{atomic::AtomicBool, Mutex, OnceLock, RwLock};
 
 pub const CONFIG_FILENAME: &'static str = "meowpdf";
 pub const DEFAULT_CONFIG: &'static str = r#"
@@ -36,6 +36,7 @@ pub static RECEIVER_GR: OnceLock<Mutex<Receiver<GraphicsResponse>>> = OnceLock::
 pub static TERMINAL_SIZE: OnceLock<RwLock<Winsize>> = OnceLock::new();
 pub static IMAGE_PADDING: OnceLock<usize> = OnceLock::new();
 pub static SOFTWARE_ID: OnceLock<String> = OnceLock::new();
+pub static RUNNING: AtomicBool = AtomicBool::new(true);
 
 #[macro_export]
 macro_rules! chan_has {
@@ -46,7 +47,18 @@ macro_rules! chan_has {
 
 #[macro_export]
 macro_rules! clear_channel {
-    ($chan:ident) => {
+    ($chan:expr) => {
         while let Ok(_) = $chan.try_recv() {}
     };
+}
+
+#[macro_export]
+macro_rules! has_elapsed {
+    ($var:expr) => {{
+        let elapsed = $var.elapsed().unwrap().as_millis();
+        if elapsed >= 500 {
+            $var = SystemTime::now();
+        }
+        elapsed >= 500
+    }};
 }
