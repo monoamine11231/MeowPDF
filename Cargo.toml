@@ -8,23 +8,22 @@ base64 = "0.22.1"
 dirs = "5.0.1"
 mupdf = { default-features = false, version = "0.5" }
 notify = { version = "6.1.1" }
-regex-automata = { features = ["unicode", "syntax", "dfa", "meta"], default-features = false, version = "0.4.7" }
 serde = { version = "1.0.204", features=["derive"] }
 toml = { features = ["parse"], default-features = false, version = "0.8.15" }
+crossterm = "0.29"
 
 [dependencies.crossbeam-channel]
 version = "0.5.15"
 features = []
 default-features = false
 
-[dependencies.nix]
-version = "0.28.0"
-features = ["term", "ioctl"]
-
 [dependencies.textwrap]
 version = "0.16.1"
 features = []
 default-features = false
+
+[patch.crates-io]
+crossterm = { git = "https://github.com/monoamine11231/crossterm-apc.git" }
 
 [profile.release]
 panic = "abort"
