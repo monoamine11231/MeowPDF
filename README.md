@@ -101,8 +101,8 @@ The configuration YAML file is found in `~/.config/meowpdf`.
 
 ## TODO
 ### Future ideas
-- [ ] Remove heavy and inefficient regex dependency and move to nested switches.
-- [ ] Implement or find a standard on parsing stdin key inputs.
+- [x] Remove heavy and inefficient regex dependency and move to nested switches.
+- [x] Implement or find a standard on parsing stdin key inputs.
 - [ ] Allow for link clicking using the mouse.
 - [ ] Allow custom remapping of keybindings.
 
