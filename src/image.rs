@@ -28,16 +28,16 @@ impl Image {
                 + (pixmap.samples().len() / 3) * 4,
         );
 
-        data.extend(
-            std::iter::repeat(PADDING_CLR)
-                .take((2 * padding + pixmap.width() as usize) * padding * 4),
-        );
+        data.extend(std::iter::repeat_n(
+            PADDING_CLR,
+            (2 * padding + pixmap.width() as usize) * padding * 4,
+        ));
 
         let row_iter = pixmap
             .samples()
             .chunks(pixmap.width() as usize * pixmap.n() as usize);
         for row in row_iter {
-            data.extend(std::iter::repeat(PADDING_CLR).take(padding * 4));
+            data.extend(std::iter::repeat_n(PADDING_CLR, padding * 4));
 
             /* If not RGBA extend by adding the alpha channel */
             if pixmap.n() == 3 {
@@ -50,13 +50,13 @@ impl Image {
             } else {
                 data.extend_from_slice(row);
             }
-            data.extend(std::iter::repeat(PADDING_CLR).take(padding * 4));
+            data.extend(std::iter::repeat_n(PADDING_CLR, padding * 4));
         }
 
-        data.extend(
-            std::iter::repeat(PADDING_CLR)
-                .take((2 * padding + pixmap.width() as usize) * padding * 4),
-        );
+        data.extend(std::iter::repeat_n(
+            PADDING_CLR,
+            (2 * padding + pixmap.width() as usize) * padding * 4,
+        ));
 
         let image: Image = Self {
             id: ID.load(Ordering::Acquire),

@@ -174,7 +174,7 @@ impl GraphicsResponse {
     }
 
     pub fn payload(&self) -> &str {
-        return self.payload.as_str();
+        self.payload.as_str()
     }
 }
 
