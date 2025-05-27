@@ -1,9 +1,8 @@
 use base64::{engine::general_purpose::STANDARD, Engine};
+use crossterm::Command;
+use core::fmt;
 use std::{
-    fs::File,
-    io::{stdout, StdoutLock, Write},
-    path::PathBuf,
-    time::Duration,
+    collections::HashMap, fs::File, io::{stdout, StdoutLock, Write}, path::PathBuf, time::Duration
 };
 
 use crate::{RECEIVER_GR, SOFTWARE_ID};
@@ -125,4 +124,64 @@ pub fn terminal_graphics_display_image(
         .map_err(|x: std::io::Error| format!("Could not flush stdout: {}", x))?;
 
     Ok(())
+}
+
+/* A structure which extracts the Kitty graphics response in a lazy way */
+#[derive(Debug, Clone)]
+pub struct GraphicsResponse {
+    source: String,
+    loaded: bool,
+    control: HashMap<String, String>,
+    payload: String,
+}
+
+impl GraphicsResponse {
+    pub fn new(source: &[u8]) -> Self {
+        let source: &str = std::str::from_utf8(source).unwrap();
+        let spl: Vec<&str> = source.split(';').collect();
+
+        Self {
+            source: spl.get(0).unwrap_or(&"").to_string(),
+            loaded: false,
+            control: HashMap::new(),
+            payload: spl.get(1).unwrap_or(&"").to_string(),
+        }
+    }
+
+    #[allow(dead_code)]
+    fn load(&mut self) {
+        let spl1= self.source.split(',');
+        for kv in spl1 {
+            let spl2: Vec<&str> = kv.split('=').collect();
+            if spl2.len() != 2 {
+                continue;
+            }
+
+            let _ = self
+                .control
+                .insert(spl2[0].to_string(), spl2[1].to_string());
+        }
+
+        self.loaded = true;
+    }
+
+    #[allow(dead_code)]
+    pub fn control(&mut self) -> &HashMap<String, String> {
+        if !self.loaded {
+            self.load();
+        }
+        return &self.control;
+    }
+
+    pub fn payload(&self) -> &str {
+        return self.payload.as_str();
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ClearImages;
+impl Command for ClearImages {
+    fn write_ansi(&self, f: &mut impl fmt::Write) -> fmt::Result {
+        f.write_str("\x1B_Ga=d,d=a\x1B\\")
+    }
 }

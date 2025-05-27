@@ -5,8 +5,8 @@ use std::sync::{
 
 use crate::{drivers::graphics::*, Config, CONFIG, IMAGE_PADDING, TERMINAL_SIZE};
 
+use crossterm::terminal::WindowSize;
 use mupdf::Pixmap;
-use nix::pty::Winsize;
 
 pub struct Image {
     id: usize,
@@ -101,11 +101,11 @@ impl Image {
         let (padding_left, padding_right): (f64, f64);
         let (cropx, cropy, cropw, croph): (usize, usize, usize, usize);
 
-        let terminal_size: RwLockReadGuard<Winsize> =
+        let terminal_size: RwLockReadGuard<WindowSize> =
             TERMINAL_SIZE.get().unwrap().read().unwrap();
 
-        pxpercol = terminal_size.ws_xpixel as f64 / terminal_size.ws_col as f64;
-        pxperrow = terminal_size.ws_ypixel as f64 / terminal_size.ws_row as f64;
+        pxpercol = terminal_size.width as f64 / terminal_size.columns as f64;
+        pxperrow = terminal_size.height as f64 / terminal_size.rows as f64;
 
         if x < 0 {
             col0 = 0.0f64;
@@ -161,8 +161,8 @@ impl Image {
         /* If trying to display outside of terminal just return */
         if col1 < 0.0f64
             || row1 < 0.0f64
-            || col0 > terminal_size.ws_col as f64
-            || row0 > terminal_size.ws_row as f64
+            || col0 > terminal_size.columns as f64
+            || row0 > terminal_size.rows as f64
         {
             return Ok(false);
         }

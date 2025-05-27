@@ -1,8 +1,16 @@
 mod drivers;
 use crossbeam_channel::Receiver;
-use drivers::input::{GraphicsResponse, TerminalKey};
-use drivers::{graphics::terminal_graphics_test_support, tui::*};
-use nix::pty::Winsize;
+use crossterm::cursor::{Hide, Show};
+use crossterm::event::{
+    DisableMouseCapture, EnableMouseCapture, KeyCode, KeyEvent, KeyModifiers,
+};
+use crossterm::execute;
+use crossterm::terminal::{
+    disable_raw_mode, enable_raw_mode, window_size, Clear, ClearType,
+    EnterAlternateScreen, LeaveAlternateScreen, WindowSize,
+};
+use drivers::graphics::ClearImages;
+use drivers::graphics::{terminal_graphics_test_support, GraphicsResponse};
 
 mod threads;
 
@@ -20,13 +28,11 @@ use crate::config::*;
 
 use std::hash::RandomState;
 use std::hash::{BuildHasher, Hasher};
-use std::ops::Deref;
+use std::io;
 use std::sync::atomic::Ordering;
 use std::sync::Mutex;
 use std::sync::{MutexGuard, RwLock};
 use std::time::{Duration, SystemTime};
-
-use nix::sys::termios::Termios;
 
 /* Tracks the last executed times of signals for throattling */
 struct LastExecuted {
@@ -37,27 +43,29 @@ struct LastExecuted {
 
 fn main() {
     /* ============================= Uncook the terminal ============================= */
-    let tty_data_original_main: Termios =
-        terminal_control_raw_mode().expect("Error when setting terminal to raw mode");
-    let tty_data_original_panic_hook: Mutex<Termios> =
-        Mutex::from(tty_data_original_main.clone());
-
-    terminal_tui_clear();
+    enable_raw_mode().expect("Could not cook the terminal");
+    execute!(io::stdout(), EnterAlternateScreen).expect("Could not enter alt mode");
+    execute!(io::stdout(), Hide).expect("Could not hide cursor");
+    execute!(io::stdout(), Clear(ClearType::All)).expect("Could not clear terminal");
+    execute!(io::stdout(), EnableMouseCapture).expect("Could not enable mouse capture");
 
     /* ========================== Cook the terminal on panic ========================= */
     let default_panic: Box<
         dyn Fn(&std::panic::PanicHookInfo<'_>) + Send + Sync + 'static,
     > = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
-        let tty = tty_data_original_panic_hook.lock().unwrap();
         /* Atleast try to cook the terminal on error before printing the message.
          * Do not handle the error to prevent possible infinite loops when panicking. */
-        let _ = terminal_control_default_mode(tty.deref());
+
+        let _ = execute!(io::stdout(), DisableMouseCapture);
+        let _ = execute!(io::stdout(), LeaveAlternateScreen);
+        let _ = execute!(io::stdout(), Show);
+        let _ = disable_raw_mode();
         default_panic(info);
     }));
 
     /* ============================= STDIN parser thread ============================= */
-    let (key_input, graphics_input) = threads::stdin::spawn();
+    let (key_input, graphics_input, winsize_change) = threads::event::spawn();
     RECEIVER_GR.get_or_init(|| Mutex::new(graphics_input));
 
     /* ========== Check if the terminal supports the Kitty graphics protocol ========= */
@@ -68,17 +76,19 @@ fn main() {
     CONFIG.get_or_init(|| config_load_or_create().expect("Could not load config"));
 
     /* ======================= Calculate padding for all images ====================== */
-    let winsize: Winsize =
-        terminal_tui_get_dimensions().expect("Could not get terminal dimensions: {}");
+    let winsize_tmp: WindowSize = window_size().expect("Could not get win size");
+    let winsize = WindowSize {
+        rows: winsize_tmp.rows,
+        columns: winsize_tmp.columns,
+        width: winsize_tmp.width,
+        height: winsize_tmp.height,
+    };
+    TERMINAL_SIZE.get_or_init(|| RwLock::new(winsize_tmp));
 
-    if winsize.ws_xpixel == 0 || winsize.ws_ypixel == 0 {
-        panic!("Could not get terminal dimensions: Invalid results from IOCTL");
-    }
-    TERMINAL_SIZE.get_or_init(|| RwLock::new(winsize));
     let config: &Config = CONFIG.get().unwrap();
 
-    let pxpercol: f64 = winsize.ws_xpixel as f64 / winsize.ws_col as f64;
-    let pxperrow: f64 = winsize.ws_ypixel as f64 / winsize.ws_row as f64;
+    let pxpercol: f64 = winsize.width as f64 / winsize.columns as f64;
+    let pxperrow: f64 = winsize.height as f64 / winsize.rows as f64;
 
     let paddingcol: usize = (pxpercol * config.viewer.render_precision
         / config.viewer.scale_min as f64)
@@ -88,9 +98,6 @@ fn main() {
         .ceil() as usize;
 
     IMAGE_PADDING.get_or_init(|| std::cmp::max(paddingcol, paddingrow));
-
-    /* ==================== Thread notifying terminal size change ==================== */
-    let winsize_change = threads::winsize::spawn();
 
     /* =========== Generate a random ID which is unique for every instance =========== */
     let random_u64: u64 = RandomState::new().build_hasher().finish();
@@ -177,24 +184,25 @@ fn main() {
                 key_processor!(key);
             }
             5 => {
-                let _ = winsize_change
+                let (width, height) = winsize_change
                     .try_recv()
                     .expect("Could not receive from win-size");
+
+                let mut handle = TERMINAL_SIZE
+                    .get()
+                    .unwrap()
+                    .write()
+                    .expect("Could not get win sie handle");
+                handle.width = width;
+                handle.height = height;
             }
             _ => unreachable!(),
         };
 
-        /* Since displaying pages is a bit slow, handle all the key events
-         * that were produced in the meantime. This creates an illusion that
-         * no delay exists (ish) */
-        // while let Ok(key) = key_input.try_recv() {
-        //     key_processor!(key);
-        // }
-
         let gr: MutexGuard<Receiver<GraphicsResponse>> =
             RECEIVER_GR.get().unwrap().lock().unwrap();
 
-        terminal_tui_clear();
+        execute!(io::stdout(), ClearImages).expect("Could not clear images");
 
         let displayed: Vec<usize> = viewer
             .display_pages(&renderer)
@@ -212,12 +220,14 @@ fn main() {
     RUNNING.store(false, Ordering::Release);
 
     /* ========================== Cook the terminal on exit ========================== */
-    terminal_control_default_mode(&tty_data_original_main)
-        .expect("Error when setting terminal to default mode");
+    execute!(io::stdout(), DisableMouseCapture).expect("Could not disable mouse capture");
+    execute!(io::stdout(), LeaveAlternateScreen).expect("Could not leave alt mode");
+    execute!(io::stdout(), Show).expect("Could not show cursor");
+    disable_raw_mode().expect("Could not uncook the terminal");
 }
 
 fn handle_key(
-    key: TerminalKey,
+    key: KeyEvent,
     viewer: &mut Viewer,
     renderer: &threads::renderer::Renderer,
     throttle_data: &mut LastExecuted,
@@ -225,35 +235,73 @@ fn handle_key(
     /* `true` indicates that the caller should exit *safely* the current process */
     let config: &Config = CONFIG.get().unwrap();
     let res: bool = match key {
-        TerminalKey::CTRLC
-        | TerminalKey::CTRLD
-        | TerminalKey::OTHER(b'q')
-        | TerminalKey::OTHER(b'Q') => true,
-        TerminalKey::UP => {
+        KeyEvent {
+            code: KeyCode::Char('c'),
+            modifiers: KeyModifiers::CONTROL,
+            ..
+        }
+        | KeyEvent {
+            code: KeyCode::Char('d'),
+            modifiers: KeyModifiers::CONTROL,
+            ..
+        }
+        | KeyEvent {
+            code: KeyCode::Char('q'),
+            ..
+        }
+        | KeyEvent {
+            code: KeyCode::Char('Q'),
+            ..
+        } => true,
+        KeyEvent {
+            code: KeyCode::Up, ..
+        } => {
             viewer.scroll((0.0f32, config.viewer.scroll_speed));
             return false;
         }
-        TerminalKey::DOWN => {
+        KeyEvent {
+            code: KeyCode::Down,
+            ..
+        } => {
             viewer.scroll((0.0f32, -config.viewer.scroll_speed));
             return false;
         }
-        TerminalKey::LEFT => {
+        KeyEvent {
+            code: KeyCode::Left,
+            ..
+        } => {
             viewer.scroll((-config.viewer.scroll_speed, 0.0f32));
             return false;
         }
-        TerminalKey::RIGHT => {
+        KeyEvent {
+            code: KeyCode::Right,
+            ..
+        } => {
             viewer.scroll((config.viewer.scroll_speed, 0.0f32));
             return false;
         }
-        TerminalKey::OTHER(b'+') => {
+        KeyEvent {
+            code: KeyCode::Char('+'),
+            ..
+        } => {
             viewer.scale(config.viewer.scale_amount);
             return false;
         }
-        TerminalKey::OTHER(b'-') => {
+        KeyEvent {
+            code: KeyCode::Char('-'),
+            ..
+        } => {
             viewer.scale(-config.viewer.scale_amount);
             return false;
         }
-        TerminalKey::OTHER(b'a') | TerminalKey::OTHER(b'A') => {
+        KeyEvent {
+            code: KeyCode::Char('a'),
+            ..
+        }
+        | KeyEvent {
+            code: KeyCode::Char('A'),
+            ..
+        } => {
             if throttle_data.alpha.elapsed().unwrap() < Duration::from_millis(500) {
                 return false;
             }
@@ -266,7 +314,14 @@ fn handle_key(
             viewer.invalidate_registry();
             return false;
         }
-        TerminalKey::OTHER(b'i') | TerminalKey::OTHER(b'I') => {
+        KeyEvent {
+            code: KeyCode::Char('i'),
+            ..
+        }
+        | KeyEvent {
+            code: KeyCode::Char('I'),
+            ..
+        } => {
             if throttle_data.inverse.elapsed().unwrap() < Duration::from_millis(500) {
                 return false;
             }
@@ -278,11 +333,25 @@ fn handle_key(
             viewer.invalidate_registry();
             return false;
         }
-        TerminalKey::OTHER(b'c') | TerminalKey::OTHER(b'C') => {
+        KeyEvent {
+            code: KeyCode::Char('c'),
+            ..
+        }
+        | KeyEvent {
+            code: KeyCode::Char('C'),
+            ..
+        } => {
             viewer.center_viewer();
             return false;
         }
-        TerminalKey::OTHER(b'G') => {
+        KeyEvent {
+            code: KeyCode::Char('g'),
+            ..
+        }
+        | KeyEvent {
+            code: KeyCode::Char('G'),
+            ..
+        } => {
             let last_page: usize = viewer.pages() - 1;
             let _ = viewer.jump(last_page);
             return false;
