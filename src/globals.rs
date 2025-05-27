@@ -1,6 +1,6 @@
-use crate::{drivers::input::GraphicsResponse, Config};
+use crate::{drivers::graphics::GraphicsResponse, Config};
 use crossbeam_channel::Receiver;
-use nix::pty::Winsize;
+use crossterm::terminal::WindowSize;
 use std::sync::{atomic::AtomicBool, Mutex, OnceLock, RwLock};
 
 pub const CONFIG_FILENAME: &'static str = "meowpdf";
@@ -33,7 +33,7 @@ position = "bottom"
 /* Hate on me for those global singletons as much as you want. */
 pub static CONFIG: OnceLock<Config> = OnceLock::new();
 pub static RECEIVER_GR: OnceLock<Mutex<Receiver<GraphicsResponse>>> = OnceLock::new();
-pub static TERMINAL_SIZE: OnceLock<RwLock<Winsize>> = OnceLock::new();
+pub static TERMINAL_SIZE: OnceLock<RwLock<WindowSize>> = OnceLock::new();
 pub static IMAGE_PADDING: OnceLock<usize> = OnceLock::new();
 pub static SOFTWARE_ID: OnceLock<String> = OnceLock::new();
 pub static RUNNING: AtomicBool = AtomicBool::new(true);

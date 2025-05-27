@@ -5,7 +5,7 @@ use std::{
 };
 
 use crossbeam_channel::{unbounded, Receiver, Sender};
-use nix::pty::Winsize;
+use crossterm::terminal::WindowSize;
 
 use crate::{threads::renderer::*, Config, Image, CONFIG, TERMINAL_SIZE};
 
@@ -68,10 +68,11 @@ impl Viewer {
 
     fn offset2page(&self, offset: f32) -> usize {
         /* Update page index by performing binary search */
-        let res: Result<usize, usize> = self.cumulative_heights.binary_search_by(|x: &f32| {
-            x.partial_cmp(&offset)
-                .expect("NaN value found in cumulative height vector")
-        });
+        let res: Result<usize, usize> =
+            self.cumulative_heights.binary_search_by(|x: &f32| {
+                x.partial_cmp(&offset)
+                    .expect("NaN value found in cumulative height vector")
+            });
 
         let index: usize = match res {
             Ok(x) => x,
@@ -84,22 +85,21 @@ impl Viewer {
     pub fn bound_viewer(&mut self) {
         let config: &Config = CONFIG.get().unwrap();
 
-        let terminal_size_lock: RwLockReadGuard<Winsize> =
-            TERMINAL_SIZE.get().unwrap().read().unwrap();
+        let terminal_size_lock = TERMINAL_SIZE.get().unwrap().read().unwrap();
 
         self.scale = f32::max(self.scale, config.viewer.scale_min);
         self.offset.0 = f32::max(
             self.offset.0,
             f32::min(
                 0.0f32,
-                terminal_size_lock.ws_xpixel as f32 - self.max_page_width * self.scale,
+                terminal_size_lock.width as f32 - self.max_page_width * self.scale,
             ),
         );
         self.offset.0 = f32::min(
             self.offset.0,
             f32::max(
                 0.0f32,
-                terminal_size_lock.ws_xpixel as f32 - self.max_page_width * self.scale,
+                terminal_size_lock.width as f32 - self.max_page_width * self.scale,
             ),
         );
         let max_yoffset: f32 = f32::max(
@@ -107,14 +107,14 @@ impl Viewer {
             self.cumulative_heights
                 .get(self.cumulative_heights.len() - 1)
                 .unwrap_or(&0.0f32)
-                - terminal_size_lock.ws_ypixel as f32 / self.scale,
+                - terminal_size_lock.height as f32 / self.scale,
         );
         self.offset.1 = f32::max(self.offset.1, -10.0f32);
         self.offset.1 = f32::min(self.offset.1, max_yoffset);
 
         self.page_first = self.offset2page(self.offset.1);
         self.page_view = self.offset2page(
-            self.offset.1 + terminal_size_lock.ws_ypixel as f32 * 0.5 / self.scale,
+            self.offset.1 + terminal_size_lock.height as f32 * 0.5 / self.scale,
         );
         let mut min_page: usize = 0;
         if self.cumulative_heights.len() > 0 {
@@ -124,10 +124,10 @@ impl Viewer {
     }
 
     pub fn center_viewer(&mut self) {
-        let terminal_size_lock: RwLockReadGuard<Winsize> =
+        let terminal_size_lock: RwLockReadGuard<WindowSize> =
             TERMINAL_SIZE.get().unwrap().read().unwrap();
 
-        self.offset.0 = terminal_size_lock.ws_xpixel as f32 * 0.5
+        self.offset.0 = terminal_size_lock.width as f32 * 0.5
             - self.max_page_width * self.scale * 0.5;
     }
 
@@ -200,7 +200,6 @@ impl Viewer {
 
     /* ================================ Miscellaneous ================================ */
 
-
     pub fn handle_image(&mut self, page: usize, image: Option<Arc<RwLock<Image>>>) {
         macro_rules! remove_image {
             ($page:expr) => {
@@ -252,8 +251,7 @@ impl Viewer {
                     || self.invalidated.contains_key(&$page))
                     && !self.scheduled4render.contains_key(&$page)
                 {
-                    let res =
-                        renderer.send_action(RendererAction::Display($page));
+                    let res = renderer.send_action(RendererAction::Display($page));
                     if res.is_ok() {
                         self.scheduled4render.insert($page, ());
                     }
@@ -318,7 +316,7 @@ impl Viewer {
 
         /* Display the other pages that fit inside the viewpoint of the terminal */
         while displayed_offset
-            < TERMINAL_SIZE.get().unwrap().read().unwrap().ws_ypixel as f32
+            < TERMINAL_SIZE.get().unwrap().read().unwrap().height as f32
             && page_index < self.cumulative_heights.len()
         {
             load_or_display!(page_index, displayed_offset, self.get_scale(), false);
