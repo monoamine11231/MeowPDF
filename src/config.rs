@@ -12,7 +12,6 @@ use crate::{CONFIG_FILENAME, DEFAULT_CONFIG};
 #[derive(Debug, Deserialize)]
 pub struct Config {
     pub viewer: ConfigViewer,
-    pub bar: ConfigBar,
 }
 
 #[derive(Debug, Deserialize)]
@@ -27,33 +26,6 @@ pub struct ConfigViewer {
     pub pages_preloaded: usize,
 }
 
-#[derive(Debug, Deserialize)]
-pub struct ConfigBar {
-    pub position: ConfigBarPosition,
-    pub segments: Option<Vec<ConfigBarSegment>>,
-    pub boundaries: Option<Vec<ConfigBarBoundary>>,
-}
-#[derive(Debug, Deserialize, PartialEq)]
-#[serde(rename_all = "lowercase")]
-pub enum ConfigBarPosition {
-    TOP,
-    BOTTOM,
-    DISABLED,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct ConfigBarSegment {
-    name: String,
-    content: String,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct ConfigBarBoundary {
-    lsegments: Vec<String>,
-    rsegments: Vec<String>,
-    width: i32,
-}
-
 pub fn config_load_or_create() -> Result<Config, String> {
     let mut config: PathBuf =
         config_dir().ok_or("Incompatible OS: No config directory has been found")?;
@@ -66,7 +38,7 @@ pub fn config_load_or_create() -> Result<Config, String> {
         config
             .write(DEFAULT_CONFIG.as_bytes())
             .map_err(|x| format!("Could not write to config file: {}", x))?;
-        config_content.push_str(&DEFAULT_CONFIG);
+        config_content.push_str(DEFAULT_CONFIG);
     } else {
         let mut config: File = File::open(config.as_path())
             .map_err(|x| format!("Could not open config file: {}", x))?;

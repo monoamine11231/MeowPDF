@@ -165,7 +165,7 @@ fn main() {
                 }
             }
             2 => {
-                let _ = file_reload
+                file_reload
                     .try_recv()
                     .expect("Could not receive file reload");
                 if throttle_data.load.elapsed().unwrap() >= Duration::from_millis(1000) {
@@ -175,7 +175,7 @@ fn main() {
                 }
             }
             3 => {
-                let _ = sender_rerender
+                sender_rerender
                     .try_recv()
                     .expect("Could not receive rerender");
             }
@@ -358,5 +358,5 @@ fn handle_key(
         }
         _ => false,
     };
-    return res;
+    res
 }

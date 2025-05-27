@@ -56,9 +56,9 @@ impl<'a> RendererInnerState<'a> {
 
         let config = CONFIG.get().unwrap();
         let inner_state: RendererInnerState<'a> = Self {
-            config: config,
-            file: file,
-            document: document,
+            config,
+            file,
+            document,
             cache: Vec::new(),
             alpha: false,
             inverse: false,
@@ -112,8 +112,8 @@ impl<'a> RendererInnerState<'a> {
         }
 
         Ok(RendererResult::PageMetadata {
-            max_page_width: max_page_width,
-            cumulative_heights: cumulative_heights,
+            max_page_width,
+            cumulative_heights,
         })
     }
 }
@@ -145,20 +145,20 @@ impl Renderer {
             Self {
                 thread_render: None,
 
-                priority_client_sender: priority_client_sender,
-                priority_server_receiver: priority_server_receiver,
+                priority_client_sender,
+                priority_server_receiver,
 
-                general_client_receiver: general_client_receiver,
-                general_server_sender: general_server_sender,
+                general_client_receiver,
+                general_server_sender,
 
-                result_server_sender: result_server_sender,
+                result_server_sender,
             },
             result_client_receiver,
         )
     }
 
-    pub fn run(&mut self, file_input: &String) -> Result<(), String> {
-        let file_string = file_input.clone();
+    pub fn run(&mut self, file_input: &str) -> Result<(), String> {
+        let file_string = file_input.to_owned();
         let priority_server_receiver = self.priority_server_receiver.clone();
         let general_server_sender = self.general_server_sender.clone();
         let result_server_sender = self.result_server_sender.clone();
@@ -198,7 +198,6 @@ impl Renderer {
                             result_server_sender.try_send_priority(result, 0).map_err(
                                 |x| format!("Could not send results to client: {}", x),
                             )?;
-
                         }
                         RendererAction::ToggleAlpha => {
                             state.alpha = !state.alpha;
@@ -218,10 +217,7 @@ impl Renderer {
                                 // removed from the registry
                                 result_server_sender
                                     .try_send_priority(
-                                        RendererResult::Image {
-                                            page: page,
-                                            data: None,
-                                        },
+                                        RendererResult::Image { page, data: None },
                                         1,
                                     )
                                     .map_err(|x| {
@@ -257,7 +253,7 @@ impl Renderer {
                             result_server_sender
                                 .try_send_priority(
                                     RendererResult::Image {
-                                        page: page,
+                                        page,
                                         data: Some(Arc::new(RwLock::new(image))),
                                     },
                                     1,

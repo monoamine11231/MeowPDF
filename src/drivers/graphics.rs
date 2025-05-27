@@ -1,8 +1,12 @@
 use base64::{engine::general_purpose::STANDARD, Engine};
-use crossterm::Command;
 use core::fmt;
+use crossterm::Command;
 use std::{
-    collections::HashMap, fs::File, io::{stdout, StdoutLock, Write}, path::PathBuf, time::Duration
+    collections::HashMap,
+    fs::File,
+    io::{stdout, StdoutLock, Write},
+    path::PathBuf,
+    time::Duration,
 };
 
 use crate::{RECEIVER_GR, SOFTWARE_ID};
@@ -12,7 +16,7 @@ use crate::{RECEIVER_GR, SOFTWARE_ID};
 pub fn terminal_graphics_test_support() -> Result<(), String> {
     let mut handle1: StdoutLock = stdout().lock();
     handle1
-        .write(b"\x1B_Gi=31,s=1,v=1,a=q,t=d,f=24;AAAA\x1B\\")
+        .write_all(b"\x1B_Gi=31,s=1,v=1,a=q,t=d,f=24;AAAA\x1B\\")
         .unwrap();
     handle1.flush().unwrap();
 
@@ -70,9 +74,8 @@ pub fn terminal_graphics_transfer_bitmap(
 
     {
         let mut tmp_file: File = File::create(tmp_file_path.as_path()).unwrap();
-        tmp_file.write(data).unwrap();
+        tmp_file.write_all(data).unwrap();
     }
-
 
     /* First chunk with bitmap metadata */
     write!(
@@ -96,10 +99,7 @@ pub fn terminal_graphics_display_image(
     col: usize,
     row: usize,
 
-    x: usize,
-    y: usize,
-    w: usize,
-    h: usize,
+    rect: (usize, usize, usize, usize),
 
     c: usize,
     r: usize,
@@ -113,11 +113,11 @@ pub fn terminal_graphics_display_image(
     write!(
         handle,
         "\x1B_Gz=-1073741825,a=p,C=1,i={},x={},y={},w={},h={},c={},r={};\x1B\\",
-        id, x, y, w, h, c, r
+        id, rect.0, rect.1, rect.2, rect.3, c, r
     )
     .unwrap();
 
-    handle.write(b"\x1B[u").unwrap();
+    handle.write_all(b"\x1B[u").unwrap();
 
     handle
         .flush()
@@ -141,7 +141,7 @@ impl GraphicsResponse {
         let spl: Vec<&str> = source.split(';').collect();
 
         Self {
-            source: spl.get(0).unwrap_or(&"").to_string(),
+            source: spl.first().unwrap_or(&"").to_string(),
             loaded: false,
             control: HashMap::new(),
             payload: spl.get(1).unwrap_or(&"").to_string(),
@@ -150,7 +150,7 @@ impl GraphicsResponse {
 
     #[allow(dead_code)]
     fn load(&mut self) {
-        let spl1= self.source.split(',');
+        let spl1 = self.source.split(',');
         for kv in spl1 {
             let spl2: Vec<&str> = kv.split('=').collect();
             if spl2.len() != 2 {
@@ -170,7 +170,7 @@ impl GraphicsResponse {
         if !self.loaded {
             self.load();
         }
-        return &self.control;
+        &self.control
     }
 
     pub fn payload(&self) -> &str {

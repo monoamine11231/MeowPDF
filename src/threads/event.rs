@@ -39,7 +39,7 @@ pub fn spawn() -> (
                         sender_key
                             .try_send(KeyEvent {
                                 code: KeyCode::Down,
-                                modifiers: modifiers,
+                                modifiers,
                                 kind: KeyEventKind::Press,
                                 state: KeyEventState::NONE,
                             })
@@ -53,7 +53,7 @@ pub fn spawn() -> (
                         sender_key
                             .try_send(KeyEvent {
                                 code: KeyCode::Right,
-                                modifiers: modifiers,
+                                modifiers,
                                 kind: KeyEventKind::Press,
                                 state: KeyEventState::NONE,
                             })
@@ -67,7 +67,7 @@ pub fn spawn() -> (
                         sender_key
                             .try_send(KeyEvent {
                                 code: KeyCode::Left,
-                                modifiers: modifiers,
+                                modifiers,
                                 kind: KeyEventKind::Press,
                                 state: KeyEventState::NONE,
                             })
@@ -81,7 +81,7 @@ pub fn spawn() -> (
                         sender_key
                             .try_send(KeyEvent {
                                 code: KeyCode::Up,
-                                modifiers: modifiers,
+                                modifiers,
                                 kind: KeyEventKind::Press,
                                 state: KeyEventState::NONE,
                             })
@@ -99,5 +99,5 @@ pub fn spawn() -> (
         }
     });
 
-    return (receive_key, receive_gr, receive_ws);
+    (receive_key, receive_gr, receive_ws)
 }

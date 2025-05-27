@@ -3,8 +3,8 @@ use crossbeam_channel::Receiver;
 use crossterm::terminal::WindowSize;
 use std::sync::{atomic::AtomicBool, Mutex, OnceLock, RwLock};
 
-pub const CONFIG_FILENAME: &'static str = "meowpdf";
-pub const DEFAULT_CONFIG: &'static str = r#"
+pub const CONFIG_FILENAME: &str = "meowpdf";
+pub const DEFAULT_CONFIG: &str = r#"
 [viewer]
 # Determines how fast the document is scrolled
 scroll_speed = 20.0
@@ -22,12 +22,6 @@ scale_amount = 0.5
 margin_bottom = 10.0
 # Determines the amount of pages that are preloaded in advance 
 pages_preloaded = 3
-[bar]
-# Determines the position of the bar. Valid values are `top` and `bottom`
-position = "bottom"
-#segment_mode = "\u001B[48;2;0;0;255m {mode} \u001B[38;2;0;0;255m\u001B[48;2;0;255;0m\uE0B0"
-#segment_file = "\u001B[38;2;255;255;255m\u001B[48;2;0;255;0m {file} \u001B[38;2;0;255;0m\u001B[48;2;255;0;0m\uE0B0"
-#segment_scale = "\u001B[38;2;255;255;255m {page}"
 "#;
 
 /* Hate on me for those global singletons as much as you want. */

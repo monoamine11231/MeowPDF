@@ -9,7 +9,7 @@ use notify::{
 static SENDER_FILE_RELOAD: OnceLock<Sender<()>> = OnceLock::new();
 static WATCHER_FILE: OnceLock<RecommendedWatcher> = OnceLock::new();
 
-pub fn spawn(file: &String) -> Result<Receiver<()>, String> {
+pub fn spawn(file: &str) -> Result<Receiver<()>, String> {
     let (sender_file_reload, receiver_file_reload) = unbounded::<()>();
 
     SENDER_FILE_RELOAD.get_or_init(|| sender_file_reload.clone());
@@ -19,19 +19,18 @@ pub fn spawn(file: &String) -> Result<Receiver<()>, String> {
             let event: notify::Event =
                 res.expect("Could not watch file changes for the given file");
 
-            match event.kind {
-                notify::EventKind::Modify(ModifyKind::Data(DataChange::Any)) => {
-                    (*SENDER_FILE_RELOAD.get().unwrap())
-                        .send(())
-                        .expect("Could not send a file change signal");
-                }
-                _ => (),
+            if let notify::EventKind::Modify(ModifyKind::Data(DataChange::Any)) =
+                event.kind
+            {
+                (*SENDER_FILE_RELOAD.get().unwrap())
+                    .send(())
+                    .expect("Could not send a file change signal");
             }
         })
         .map_err(|x| format!("Could not initialize a file watcher: {}", x))?;
 
     watcher_file
-        .watch(Path::new(file.as_str()), RecursiveMode::NonRecursive)
+        .watch(Path::new(file), RecursiveMode::NonRecursive)
         .expect("Could not start watching file changes for the given file");
 
     WATCHER_FILE.get_or_init(|| watcher_file);

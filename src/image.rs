@@ -22,8 +22,7 @@ impl Image {
         const PADDING_CLR: u8 = 0u8;
         let padding: usize = *IMAGE_PADDING.get().unwrap();
 
-        let mut data: Vec<u8> = Vec::new();
-        data.reserve(
+        let mut data: Vec<u8> = Vec::with_capacity(
             (2 * padding + pixmap.width() as usize) * padding * 8
                 + padding * 8
                 + (pixmap.samples().len() / 3) * 4,
@@ -62,7 +61,7 @@ impl Image {
         let image: Image = Self {
             id: ID.load(Ordering::Acquire),
             dimensions: (pixmap.width() as i32, pixmap.height() as i32),
-            data: data,
+            data,
         };
 
         ID.store(ID.load(Ordering::Acquire) + 1, Ordering::Release);
@@ -72,19 +71,19 @@ impl Image {
 
     #[allow(dead_code)]
     pub fn id(&self) -> usize {
-        return self.id;
+        self.id
     }
 
     #[allow(dead_code)]
     pub fn size(&self) -> usize {
-        return self.data.len();
+        self.data.len()
     }
 
     #[allow(dead_code)]
     pub fn check(&self) -> Result<(), String> {
         /* The first pixels should be invisible and therefore we have an easy if
          * the image still exists */
-        terminal_graphics_display_image(self.id, 1, 1, 1, 1, 1, 1, 2, 2)?;
+        terminal_graphics_display_image(self.id, 1, 1, (1, 1, 1, 1), 2, 2)?;
         Ok(())
     }
 
@@ -172,10 +171,7 @@ impl Image {
             self.id,
             1 + col0.floor() as usize,
             1 + row0.floor() as usize,
-            cropx,
-            cropy,
-            cropw,
-            croph,
+            (cropx, cropy, cropw, croph),
             (col1.ceil() - col0.floor()) as usize,
             (row1.ceil() - row0.floor()) as usize,
         )?;

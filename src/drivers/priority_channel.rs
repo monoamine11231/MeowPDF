@@ -1,4 +1,6 @@
-use crossbeam_channel::{unbounded, Receiver, RecvError, Select, SendError, Sender, TryRecvError, TrySendError};
+use crossbeam_channel::{
+    unbounded, Receiver, RecvError, Select, SendError, Sender, TryRecvError, TrySendError,
+};
 
 use crate::clear_channel;
 
@@ -10,12 +12,16 @@ pub struct PrioritySender<T, const U: usize> {
 impl<T, const U: usize> PrioritySender<T, U> {
     #[allow(dead_code)]
     pub fn send_priority(&self, obj: T, priority: usize) -> Result<(), SendError<T>> {
-        Ok(self.senders[priority].send(obj)?)
+        self.senders[priority].send(obj)
     }
 
     #[allow(dead_code)]
-    pub fn try_send_priority(&self, obj: T, priority: usize) -> Result<(), TrySendError<T>> {
-        Ok(self.senders[priority].try_send(obj)?)
+    pub fn try_send_priority(
+        &self,
+        obj: T,
+        priority: usize,
+    ) -> Result<(), TrySendError<T>> {
+        self.senders[priority].try_send(obj)
     }
 }
 
@@ -47,12 +53,12 @@ impl<T, const U: usize> PriorityReceiver<T, U> {
 
     #[allow(dead_code)]
     pub fn recv_priority(&self, priority: usize) -> Result<T, RecvError> {
-        Ok(self.receivers[priority].recv()?)
+        self.receivers[priority].recv()
     }
 
     #[allow(dead_code)]
     pub fn try_recv_priority(&self, priority: usize) -> Result<T, TryRecvError> {
-        Ok(self.receivers[priority].try_recv()?)
+        self.receivers[priority].try_recv()
     }
 
     #[allow(dead_code)]

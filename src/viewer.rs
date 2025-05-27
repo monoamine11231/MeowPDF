@@ -43,19 +43,15 @@ impl Viewer {
                 scheduled4render: HashMap::new(),
                 memory_used: 0,
                 last_rendered: VecDeque::new(),
-                sender_rerender: sender_rerender,
+                sender_rerender,
             },
             receiver_rerender,
         )
     }
 
-    pub fn update_metadata(
-        &mut self,
-        max_page_width: f32,
-        cumulative_heights: &Vec<f32>,
-    ) {
+    pub fn update_metadata(&mut self, max_page_width: f32, cumulative_heights: &[f32]) {
         self.max_page_width = max_page_width;
-        self.cumulative_heights = cumulative_heights.clone();
+        self.cumulative_heights = cumulative_heights.to_owned();
     }
 
     pub fn invalidate_registry(&mut self) {
@@ -104,9 +100,7 @@ impl Viewer {
         );
         let max_yoffset: f32 = f32::max(
             -10.0f32,
-            self.cumulative_heights
-                .get(self.cumulative_heights.len() - 1)
-                .unwrap_or(&0.0f32)
+            self.cumulative_heights.last().unwrap_or(&0.0f32)
                 - terminal_size_lock.height as f32 / self.scale,
         );
         self.offset.1 = f32::max(self.offset.1, -10.0f32);
@@ -117,7 +111,7 @@ impl Viewer {
             self.offset.1 + terminal_size_lock.height as f32 * 0.5 / self.scale,
         );
         let mut min_page: usize = 0;
-        if self.cumulative_heights.len() > 0 {
+        if !self.cumulative_heights.is_empty() {
             min_page = self.cumulative_heights.len() - 1;
         }
         self.page_view = usize::min(self.page_view, min_page);
@@ -138,7 +132,7 @@ impl Viewer {
     }
 
     pub fn pages(&self) -> usize {
-        return self.cumulative_heights.len();
+        self.cumulative_heights.len()
     }
 
     pub fn jump(&mut self, page: usize) -> Result<(), String> {
@@ -164,33 +158,31 @@ impl Viewer {
     }
 
     pub fn get_scale(&self) -> f32 {
-        return self.scale;
+        self.scale
     }
 
     pub fn page_first(&self) -> usize {
-        return self.page_first;
+        self.page_first
     }
 
     #[allow(dead_code)]
     pub fn page_view(&self) -> usize {
-        return self.page_view;
+        self.page_view
     }
 
     pub fn offset(&self) -> (f32, f32) {
-        return self.offset;
+        self.offset
     }
 
     /* ============================= Calculation methods ============================= */
     pub fn page_height(&self, page: usize) -> Result<f32, String> {
-        let page_prev_height: f32;
-        if page > 0 {
-            page_prev_height = *self.cumulative_heights.get(page - 1).unwrap_or(&0.0f32);
+        let page_prev_height: f32 = if page > 0 {
+            *self.cumulative_heights.get(page - 1).unwrap_or(&0.0f32)
         } else {
-            page_prev_height = 0.0f32;
-        }
+            0.0f32
+        };
 
-        let page_height: f32;
-        page_height = *self.cumulative_heights.get(page).ok_or(format!(
+        let page_height = *self.cumulative_heights.get(page).ok_or(format!(
             "Wrong page index provided when retrieving page height, index: {}",
             page
         ))? - page_prev_height;
