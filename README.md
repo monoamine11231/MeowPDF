@@ -7,7 +7,7 @@
 
 *A Kitty terminal PDF viewer with Vim-like keybindings and classical GUI-like usage.*
 
-[![Latest release](https://img.shields.io/github/v/release/monoamine11231/meowpdf?label=Latest%20release&style=social)](https://github.com/monoamine11231/meowpdf/releases/tag/v1.0.0)
+[![Latest release](https://img.shields.io/github/v/release/monoamine11231/meowpdf?label=Latest%20release&style=social)](https://github.com/monoamine11231/meowpdf/releases/tag/v1.1.0)
 [![GitHub commits](https://img.shields.io/github/commits-since/monoamine11231/meowpdf/v1.0.0.svg?style=social)](https://GitHub.com/monoamine11231/meowpdf/commit/)
 [![Stars](https://img.shields.io/github/stars/monoamine11231/meowpdf?style=social)](https://github.com/monoamine11231/meowpdf/stargazers)
 [![Fork](https://img.shields.io/github/forks/monoamine11231/meowpdf?style=social)](https://github.com/monoamine11231/meowpdf/network/members)
