@@ -1,7 +1,8 @@
 <h1 align="center" style="display: block; font-size: 2.5em; font-weight: bold; margin-block-start: 1em; margin-block-end: 1em;">
   <img align="center" src="https://raw.githubusercontent.com/monoamine11231/MeowPDF/refs/heads/master/assets/logo.png" alt="MeowPDF Logo" style="width:100%;height:100%"/><br />
   <br/>
-  <strong>MeowPDF</strong>
+  <strong>MeowPDF</strong><br/>
+  <img align="center" src="https://github.com/monoamine11231/MeowPDF/actions/workflows/build.yml/badge.svg"/>
 </h1>
 
 *A Kitty terminal PDF viewer with Vim-like keybindings and classical GUI-like usage.*
