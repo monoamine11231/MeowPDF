@@ -5,6 +5,7 @@ use std::{
 };
 
 use dirs::config_dir;
+use keybinds::Keybinds;
 use serde::Deserialize;
 
 use crate::{CONFIG_FILENAME, DEFAULT_CONFIG};
@@ -12,6 +13,7 @@ use crate::{CONFIG_FILENAME, DEFAULT_CONFIG};
 #[derive(Debug, Deserialize)]
 pub struct Config {
     pub viewer: ConfigViewer,
+    pub bindings: Option<Keybinds<ConfigAction>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -24,6 +26,18 @@ pub struct ConfigViewer {
     pub scale_amount: f32,
     pub margin_bottom: f32,
     pub pages_preloaded: usize,
+}
+
+#[derive(Debug, Deserialize)]
+pub enum ConfigAction {
+    ToggleAlpha,
+    ToggleInverse,
+    CenterViewer,
+    ZoomIn,
+    ZoomOut,
+    JumpFirstPage,
+    JumpLastPage,
+    Quit,
 }
 
 pub fn config_load_or_create() -> Result<Config, String> {
@@ -74,6 +88,10 @@ pub fn config_load_or_create() -> Result<Config, String> {
 
     if config_parsed.viewer.margin_bottom < 0.0f32 {
         return Err("`config.viewer.margin_bottom` can not be negative!".to_string());
+    }
+
+    if config_parsed.bindings.is_none() {
+        return Err("`config.bindings` can not be empty!".to_string());
     }
 
     Ok(config_parsed)

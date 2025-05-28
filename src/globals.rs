@@ -22,6 +22,20 @@ scale_amount = 0.5
 margin_bottom = 10.0
 # Determines the amount of pages that are preloaded in advance 
 pages_preloaded = 3
+
+[bindings]
+"a" = "ToggleAlpha"
+"A" = "ToggleAlpha"
+"i" = "ToggleInverse"
+"I" = "ToggleInverse"
+"c" = "CenterViewer"
+"C" = "CenterViewer"
+"Plus" = "ZoomIn"
+"-" = "ZoomOut"
+"g g" = "JumpFirstPage"
+"G" = "JumpLastPage"
+"q" = "Quit"
+"Q" = "Quit"
 "#;
 
 /* Hate on me for those global singletons as much as you want. */

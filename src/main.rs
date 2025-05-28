@@ -1,9 +1,7 @@
 mod drivers;
 use crossbeam_channel::Receiver;
 use crossterm::cursor::{Hide, Show};
-use crossterm::event::{
-    DisableMouseCapture, EnableMouseCapture, KeyCode, KeyEvent, KeyModifiers,
-};
+use crossterm::event::{DisableMouseCapture, EnableMouseCapture, KeyCode, KeyEvent};
 use crossterm::execute;
 use crossterm::terminal::{
     disable_raw_mode, enable_raw_mode, window_size, Clear, ClearType,
@@ -11,6 +9,7 @@ use crossterm::terminal::{
 };
 use drivers::graphics::ClearImages;
 use drivers::graphics::{terminal_graphics_test_support, GraphicsResponse};
+use keybinds::{KeyInput, Keybinds};
 
 mod threads;
 
@@ -73,7 +72,13 @@ fn main() {
         .expect("Error when testing terminal support of the Kitty graphics protocol");
 
     /* ================================= Load config ================================= */
-    CONFIG.get_or_init(|| config_load_or_create().expect("Could not load config"));
+    let mut key_matcher: Keybinds<ConfigAction>;
+    {
+        let mut config = config_load_or_create().expect("Could not load config");
+        key_matcher = config.bindings.unwrap();
+        config.bindings = None;
+        CONFIG.get_or_init(|| config);
+    }
 
     /* ======================= Calculate padding for all images ====================== */
     let winsize_tmp: WindowSize = window_size().expect("Could not get win size");
@@ -125,16 +130,6 @@ fn main() {
     };
 
     'main: loop {
-        macro_rules! key_processor {
-            ($key:ident) => {
-                let exit: bool =
-                    handle_key($key, &mut viewer, &renderer, &mut throttle_data);
-                if exit {
-                    break 'main;
-                }
-            };
-        }
-
         /* sel[0..1] are the results from the renderer thread */
         let mut sel = result_receiver.construct_select();
         sel.recv(&file_reload);
@@ -181,7 +176,15 @@ fn main() {
             }
             4 => {
                 let key = key_input.try_recv().expect("Could not receive key");
-                key_processor!(key);
+                if handle_key(
+                    key,
+                    &mut key_matcher,
+                    &mut viewer,
+                    &renderer,
+                    &mut throttle_data,
+                ) {
+                    break 'main;
+                }
             }
             5 => {
                 let (width, height) = winsize_change
@@ -228,80 +231,66 @@ fn main() {
 
 fn handle_key(
     key: KeyEvent,
+    key_matcher: &mut Keybinds<ConfigAction>,
     viewer: &mut Viewer,
     renderer: &threads::renderer::Renderer,
     throttle_data: &mut LastExecuted,
 ) -> bool {
-    /* `true` indicates that the caller should exit *safely* the current process */
     let config: &Config = CONFIG.get().unwrap();
-    let res: bool = match key {
-        KeyEvent {
-            code: KeyCode::Char('c'),
-            modifiers: KeyModifiers::CONTROL,
-            ..
+
+    let possible_action = key_matcher.dispatch(KeyInput::from(key));
+    if possible_action.is_none() {
+        return match key {
+            KeyEvent {
+                code: KeyCode::Up, ..
+            } => {
+                viewer.scroll((0.0f32, config.viewer.scroll_speed));
+                false
+            }
+            KeyEvent {
+                code: KeyCode::Down,
+                ..
+            } => {
+                viewer.scroll((0.0f32, -config.viewer.scroll_speed));
+                false
+            }
+            KeyEvent {
+                code: KeyCode::Left,
+                ..
+            } => {
+                viewer.scroll((-config.viewer.scroll_speed, 0.0f32));
+                false
+            }
+            KeyEvent {
+                code: KeyCode::Right,
+                ..
+            } => {
+                viewer.scroll((config.viewer.scroll_speed, 0.0f32));
+                false
+            }
+            _ => false,
+        };
+    }
+
+    let action = possible_action.unwrap();
+
+    /* `true` indicates that the caller should exit *safely* the current process */
+    let res: bool = match action {
+        ConfigAction::CenterViewer => {
+            viewer.center_viewer();
+            false
         }
-        | KeyEvent {
-            code: KeyCode::Char('d'),
-            modifiers: KeyModifiers::CONTROL,
-            ..
+        ConfigAction::JumpFirstPage => {
+            let _ = viewer.jump(0);
+            false
         }
-        | KeyEvent {
-            code: KeyCode::Char('q'),
-            ..
+        ConfigAction::JumpLastPage => {
+            let last_page: usize = viewer.pages() - 1;
+            let _ = viewer.jump(last_page);
+            false
         }
-        | KeyEvent {
-            code: KeyCode::Char('Q'),
-            ..
-        } => true,
-        KeyEvent {
-            code: KeyCode::Up, ..
-        } => {
-            viewer.scroll((0.0f32, config.viewer.scroll_speed));
-            return false;
-        }
-        KeyEvent {
-            code: KeyCode::Down,
-            ..
-        } => {
-            viewer.scroll((0.0f32, -config.viewer.scroll_speed));
-            return false;
-        }
-        KeyEvent {
-            code: KeyCode::Left,
-            ..
-        } => {
-            viewer.scroll((-config.viewer.scroll_speed, 0.0f32));
-            return false;
-        }
-        KeyEvent {
-            code: KeyCode::Right,
-            ..
-        } => {
-            viewer.scroll((config.viewer.scroll_speed, 0.0f32));
-            return false;
-        }
-        KeyEvent {
-            code: KeyCode::Char('+'),
-            ..
-        } => {
-            viewer.scale(config.viewer.scale_amount);
-            return false;
-        }
-        KeyEvent {
-            code: KeyCode::Char('-'),
-            ..
-        } => {
-            viewer.scale(-config.viewer.scale_amount);
-            return false;
-        }
-        KeyEvent {
-            code: KeyCode::Char('a'),
-            ..
-        }
-        | KeyEvent {
-            code: KeyCode::Char('A'),
-            ..
-        } => {
+        ConfigAction::Quit => true,
+        ConfigAction::ToggleAlpha => {
             if throttle_data.alpha.elapsed().unwrap() < Duration::from_millis(500) {
                 return false;
             }
@@ -312,16 +301,9 @@ fn handle_key(
                 .send_and_confirm_action(threads::renderer::RendererAction::ToggleAlpha)
                 .expect("Could not send action to renderer");
             viewer.invalidate_registry();
-            return false;
+            false
         }
-        KeyEvent {
-            code: KeyCode::Char('i'),
-            ..
-        }
-        | KeyEvent {
-            code: KeyCode::Char('I'),
-            ..
-        } => {
+        ConfigAction::ToggleInverse => {
             if throttle_data.inverse.elapsed().unwrap() < Duration::from_millis(500) {
                 return false;
             }
@@ -331,28 +313,16 @@ fn handle_key(
                 .send_and_confirm_action(threads::renderer::RendererAction::ToggleInverse)
                 .expect("Could not send action to renderer");
             viewer.invalidate_registry();
-            return false;
+            false
         }
-        KeyEvent {
-            code: KeyCode::Char('c'),
-            ..
+        ConfigAction::ZoomIn => {
+            viewer.scale(config.viewer.scale_amount);
+            false
         }
-        | KeyEvent {
-            code: KeyCode::Char('C'),
-            ..
-        } => {
-            viewer.center_viewer();
-            return false;
+        ConfigAction::ZoomOut => {
+            viewer.scale(-config.viewer.scale_amount);
+            false
         }
-        KeyEvent {
-            code: KeyCode::Char('G'),
-            ..
-        } => {
-            let last_page: usize = viewer.pages() - 1;
-            let _ = viewer.jump(last_page);
-            return false;
-        }
-        _ => false,
     };
     res
 }
