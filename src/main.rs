@@ -345,10 +345,6 @@ fn handle_key(
             return false;
         }
         KeyEvent {
-            code: KeyCode::Char('g'),
-            ..
-        }
-        | KeyEvent {
             code: KeyCode::Char('G'),
             ..
         } => {
