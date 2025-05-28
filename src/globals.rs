@@ -14,8 +14,6 @@ render_precision = 1.5
 memory_limit = 314572800
 # Determines the default scale of the viewer when starting the viewer
 scale_default = 0.5
-# Determines the minimal possible zoom-out of the viewer
-scale_min = 0.2
 # Determines the scaling amount when zooming in or out
 scale_amount = 0.5
 # Determines the margin on the bottom of each page

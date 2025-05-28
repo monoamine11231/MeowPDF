@@ -108,7 +108,7 @@ The configuration TOML file is found in `~/.config/meowpdf`.
 - [x] Allow custom remapping of keybindings.
 
 ### In progress
-- [ ] Implement auto-scaling of the PDF document on opening based on terminal size.
+- [x] Implement auto-scaling of the PDF document on opening based on terminal size.
 - [ ] Develop a customizable Vim-like bar illustrating page & document metrics.
 
 

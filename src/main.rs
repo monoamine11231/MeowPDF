@@ -149,9 +149,14 @@ fn main() {
                         max_page_width,
                         cumulative_heights,
                     } => {
+                        let uninit = viewer.is_uninit();
+
                         viewer.update_metadata(max_page_width, &cumulative_heights);
                         viewer.invalidate_registry();
                         viewer.center_viewer();
+                        if uninit {
+                            viewer.scale_page2terminal();
+                        }
                         result_receiver.clear_priority(1);
                     }
                     threads::renderer::RendererResult::Image { page, data } => {

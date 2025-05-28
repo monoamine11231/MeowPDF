@@ -21,7 +21,6 @@ pub struct ConfigViewer {
     pub scroll_speed: f32,
     pub render_precision: f64,
     pub memory_limit: usize,
-    pub scale_default: f32,
     pub scale_min: f32,
     pub scale_amount: f32,
     pub margin_bottom: f32,
@@ -69,13 +68,6 @@ pub fn config_load_or_create() -> Result<Config, String> {
     if config_parsed.viewer.render_precision <= 0.0f64 {
         return Err(
             "`config.viewer.render_precision` can not be negative or equal to 0!"
-                .to_string(),
-        );
-    }
-
-    if config_parsed.viewer.scale_default <= 0.0f32 {
-        return Err(
-            "`config.viewer.scale_default` can not be negative or equal to 0!"
                 .to_string(),
         );
     }

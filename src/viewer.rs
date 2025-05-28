@@ -14,7 +14,7 @@ pub struct Viewer {
     page_first: usize,  /* The first page in the view */
     page_view: usize,   /* The page in the middle */
     offset: (f32, f32), /* Offset is given in page size units ≈ pixels */
-    max_page_width: f32,
+    max_width: f32,
     cumulative_heights: Vec<f32>,
 
     pub images: HashMap<usize, Arc<RwLock<Image>>>,
@@ -28,15 +28,14 @@ pub struct Viewer {
 
 impl Viewer {
     pub fn new() -> (Self, Receiver<()>) {
-        let config: &Config = CONFIG.get().unwrap();
         let (sender_rerender, receiver_rerender) = unbounded::<()>();
         (
             Self {
-                scale: config.viewer.scale_default,
+                scale: 1.0,
                 page_first: 0,
                 page_view: 0,
                 offset: (0.0f32, 0.0f32),
-                max_page_width: -f32::INFINITY,
+                max_width: -f32::INFINITY,
                 cumulative_heights: Vec::new(),
                 images: HashMap::new(),
                 invalidated: HashMap::new(),
@@ -49,8 +48,12 @@ impl Viewer {
         )
     }
 
-    pub fn update_metadata(&mut self, max_page_width: f32, cumulative_heights: &[f32]) {
-        self.max_page_width = max_page_width;
+    pub fn is_uninit(&self) -> bool {
+        self.cumulative_heights.len() == 0 && self.max_width == -f32::INFINITY
+    }
+
+    pub fn update_metadata(&mut self, max_width: f32, cumulative_heights: &[f32]) {
+        self.max_width = max_width;
         self.cumulative_heights = cumulative_heights.to_owned();
     }
 
@@ -88,14 +91,14 @@ impl Viewer {
             self.offset.0,
             f32::min(
                 0.0f32,
-                terminal_size_lock.width as f32 - self.max_page_width * self.scale,
+                terminal_size_lock.width as f32 - self.max_width * self.scale,
             ),
         );
         self.offset.0 = f32::min(
             self.offset.0,
             f32::max(
                 0.0f32,
-                terminal_size_lock.width as f32 - self.max_page_width * self.scale,
+                terminal_size_lock.width as f32 - self.max_width * self.scale,
             ),
         );
         let max_yoffset: f32 = f32::max(
@@ -117,12 +120,20 @@ impl Viewer {
         self.page_view = usize::min(self.page_view, min_page);
     }
 
+    pub fn scale_page2terminal(&mut self) {
+        let terminal_size_lock = TERMINAL_SIZE.get().unwrap().read().unwrap();
+
+        let factor = terminal_size_lock.width as f32 / (self.max_width * self.scale);
+        self.scale *= factor;
+        self.bound_viewer();
+    }
+
     pub fn center_viewer(&mut self) {
         let terminal_size_lock: RwLockReadGuard<WindowSize> =
             TERMINAL_SIZE.get().unwrap().read().unwrap();
 
-        self.offset.0 = terminal_size_lock.width as f32 * 0.5
-            - self.max_page_width * self.scale * 0.5;
+        self.offset.0 =
+            terminal_size_lock.width as f32 * 0.5 - self.max_width * self.scale * 0.5;
     }
 
     pub fn scroll(&mut self, amount: (f32, f32)) {
