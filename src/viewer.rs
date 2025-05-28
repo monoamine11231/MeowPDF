@@ -49,7 +49,7 @@ impl Viewer {
     }
 
     pub fn is_uninit(&self) -> bool {
-        self.cumulative_heights.len() == 0 && self.max_width == -f32::INFINITY
+        self.cumulative_heights.is_empty() && self.max_width == -f32::INFINITY
     }
 
     pub fn update_metadata(&mut self, max_width: f32, cumulative_heights: &[f32]) {
