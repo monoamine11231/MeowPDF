@@ -8,9 +8,10 @@ base64 = "0.22.1"
 dirs = "5.0.1"
 mupdf = { default-features = false, version = "0.5" }
 notify = { version = "6.1.1" }
-serde = { version = "1.0.204", features=["derive"] }
-toml = { features = ["parse"], default-features = false, version = "0.8.15" }
+serde = { version = "1.0.219", features = ["derive"] }
+toml = { features = ["parse"], default-features = false, version = "0.8.22" }
 crossterm = "0.29"
+keybinds = { version = "0.2", features = ["crossterm", "serde"] }
 
 [dependencies.crossbeam-channel]
 version = "0.5.15"
