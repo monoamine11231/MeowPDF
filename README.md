@@ -21,9 +21,6 @@
 ## Why?
 There are multiple in-terminal PDF viewers for the Kitty terminal but the main problem is that the end-user can interact only by viewing one page at a time. The user may have the need to zoom in and out of the PDF document to view details in the document. Another problem is viewing continuous content which is split between multiple pages. Therefore it was decided to develop such PDF viewer which can operates in the same way as a classical GUI PDF viewer but which can additionally be controlled by powerful Vim-like keybindings.
 
-> [!WARNING]
-> This project is currently under it's early development state; there can be many bugs and problems. The codebase is weak and going to be upgraded in the near future to minimize dependencies and possible bugs.
-
 <hr/>
 
 ## Table of Contents
@@ -51,14 +48,9 @@ There are multiple in-terminal PDF viewers for the Kitty terminal but the main p
 <hr/>
 
 ## Installation
-The project is easily built using Cargo:
+The project is easily built and installed using Cargo:
 ```sh
-$ cargo build
-```
-
-...and as easily installed:
-```sh
-$ cargo install --path .
+$ cargo build --release && cargo install -path .
 ```
 
 <div align="right"><kbd><a href="#table-of-contents">↑ Back to top ↑</a></kbd></div>
@@ -70,19 +62,6 @@ To view a PDF file simply execute:
 $ meowpdf <PATH TO PDF FILE>
 ```
 
-### Keybindings
-There are a set of keybindings implemented in this viewer which are listed below:
-- **q**: Quit
-- **a**: Toggles alpha on PDF pages (Makes white background of PDF pages transparent)
-- **i**: Toggles color inversion on PDF pages
-- **\<S\>+g**: Jumps to the last page of the PDF document
-- **\<left\>**: Move the document to the left
-- **\<right\>**: Move the document to the right
-- **\<up\>**: Move the pages up (& the document down)
-- **\<down\>**: Move the pages down (& the document up)
-- **+**: Zoom in
-- **-**: Zoom out
-
 ### Configuration
 One of the key-features of *MeowPDF* is it's high customizability. *MeowPDF* allows customization based on the following parameters:
 - Scroll speed
@@ -93,8 +72,30 @@ One of the key-features of *MeowPDF* is it's high customizability. *MeowPDF* all
 - Zoom amount
 - Margin amount on the bottom of PDF pages
 - Preloaded pages before and after the first displayed page
+- Keybindings
 
-The configuration YAML file is found in `~/.config/meowpdf`.
+#### Keybindings
+The default keybindings are listed bellow:
+- **q/Q**: Quit
+- **a/A**: Toggles alpha on PDF pages (Makes white background of PDF pages transparent)
+- **i/I**: Toggles color inversion on PDF pages
+- **c/C**: Center the viewer
+- **gg**: Jumps to the first page of the PDF document
+- **G**: Jumps to the last page of the PDF document
+- **\<left\>**: Move the document to the left
+- **\<right\>**: Move the document to the right
+- **\<up\>**: Move the pages up (& the document down)
+- **\<down\>**: Move the pages down (& the document up)
+- **+**: Zoom in
+- **-**: Zoom out
+
+The keybindings can be customized by modifying the `[bindings]` section in the configuration file. The syntax for expressing key combinations is the same as of [keybinds-rs](https://github.com/rhysd/keybinds-rs/blob/main/doc/binding_syntax.md).
+
+> [!WARNING]
+> Be aware that character keys such as `a`, `b`, ... can not be combined with the Shift modifier explicitely. Capitalize the characters instead.
+
+
+The configuration TOML file is found in `~/.config/meowpdf`.
 
 <div align="right"><kbd><a href="#table-of-contents">↑ Back to top ↑</a></kbd></div>
 <hr/>
@@ -104,7 +105,7 @@ The configuration YAML file is found in `~/.config/meowpdf`.
 - [x] Remove heavy and inefficient regex dependency and move to nested switches.
 - [x] Implement or find a standard on parsing stdin key inputs.
 - [ ] Allow for link clicking using the mouse.
-- [ ] Allow custom remapping of keybindings.
+- [x] Allow custom remapping of keybindings.
 
 ### In progress
 - [ ] Implement auto-scaling of the PDF document on opening based on terminal size.
