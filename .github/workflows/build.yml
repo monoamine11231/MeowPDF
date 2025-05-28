@@ -1,4 +1,4 @@
-name: MeowPDF Test
+name: Build
 
 on:
   # Build master branch only
