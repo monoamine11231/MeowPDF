@@ -41,6 +41,7 @@ There are multiple in-terminal PDF viewers for the Kitty terminal but the main p
 
 ## Features
 - Control using mouse/touchpad/keyboard
+- File watch
 - Toggling of alpha and/or inverse color modes
 - Mouse clicking and link hovering
 - Customization of keybindings
