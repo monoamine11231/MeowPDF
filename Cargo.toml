@@ -12,6 +12,7 @@ serde = { version = "1.0.219", features = ["derive"] }
 toml = { features = ["parse"], default-features = false, version = "0.8.22" }
 crossterm = "0.29"
 keybinds = { version = "0.2", features = ["crossterm", "serde"] }
+open = "5.3.2"
 
 [dependencies.crossbeam-channel]
 version = "0.5.15"
