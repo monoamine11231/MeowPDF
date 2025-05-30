@@ -105,7 +105,7 @@ The configuration TOML file is found in `~/.config/meowpdf`.
 ### Future ideas
 - [x] Remove heavy and inefficient regex dependency and move to nested switches.
 - [x] Implement or find a standard on parsing stdin key inputs.
-- [ ] Allow for link clicking using the mouse.
+- [x] Allow for link clicking using the mouse.
 - [x] Allow custom remapping of keybindings.
 
 ### In progress
