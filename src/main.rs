@@ -1,7 +1,7 @@
 mod drivers;
 use crossbeam_channel::Receiver;
 use crossterm::cursor::{Hide, Show};
-use crossterm::event::{DisableMouseCapture, EnableMouseCapture, KeyCode, KeyEvent};
+use crossterm::event::{KeyCode, KeyEvent};
 use crossterm::execute;
 use crossterm::terminal::{
     disable_raw_mode, enable_raw_mode, window_size, Clear, ClearType,
@@ -10,6 +10,7 @@ use crossterm::terminal::{
 use drivers::graphics::ClearImages;
 use drivers::graphics::{terminal_graphics_test_support, GraphicsResponse};
 use keybinds::{KeyInput, Keybinds};
+use threads::event::{DisableMouseCapturePixels, EnableMouseCapturePixels};
 
 mod threads;
 
@@ -46,7 +47,8 @@ fn main() {
     execute!(io::stdout(), EnterAlternateScreen).expect("Could not enter alt mode");
     execute!(io::stdout(), Hide).expect("Could not hide cursor");
     execute!(io::stdout(), Clear(ClearType::All)).expect("Could not clear terminal");
-    execute!(io::stdout(), EnableMouseCapture).expect("Could not enable mouse capture");
+    execute!(io::stdout(), EnableMouseCapturePixels)
+        .expect("Could not enable mouse capture");
 
     /* ========================== Cook the terminal on panic ========================= */
     let default_panic: Box<
@@ -56,7 +58,7 @@ fn main() {
         /* Atleast try to cook the terminal on error before printing the message.
          * Do not handle the error to prevent possible infinite loops when panicking. */
 
-        let _ = execute!(io::stdout(), DisableMouseCapture);
+        let _ = execute!(io::stdout(), DisableMouseCapturePixels);
         let _ = execute!(io::stdout(), LeaveAlternateScreen);
         let _ = execute!(io::stdout(), Show);
         let _ = disable_raw_mode();
@@ -64,8 +66,8 @@ fn main() {
     }));
 
     /* ============================= STDIN parser thread ============================= */
-    let (key_input, graphics_input, winsize_change) = threads::event::spawn();
-    RECEIVER_GR.get_or_init(|| Mutex::new(graphics_input));
+    let event_inputs = threads::event::spawn();
+    RECEIVER_GR.get_or_init(|| Mutex::new(event_inputs.2));
 
     /* ========== Check if the terminal supports the Kitty graphics protocol ========= */
     terminal_graphics_test_support()
@@ -134,8 +136,12 @@ fn main() {
         let mut sel = result_receiver.construct_select();
         sel.recv(&file_reload);
         sel.recv(&sender_rerender);
-        sel.recv(&key_input);
-        sel.recv(&winsize_change);
+        /* Key event */
+        sel.recv(&event_inputs.0);
+        /* Mouse event */
+        sel.recv(&event_inputs.1);
+        /* Window size change input */
+        sel.recv(&event_inputs.3);
 
         let index_ready = sel.ready();
         match index_ready {
@@ -148,11 +154,15 @@ fn main() {
                     threads::renderer::RendererResult::PageMetadata {
                         max_page_width,
                         cumulative_heights,
-                        widths
+                        widths,
                     } => {
                         let uninit = viewer.is_uninit();
 
-                        viewer.update_metadata(max_page_width, &cumulative_heights, &widths);
+                        viewer.update_metadata(
+                            max_page_width,
+                            &cumulative_heights,
+                            &widths,
+                        );
                         viewer.invalidate_registry();
                         viewer.center_viewer();
                         if uninit {
@@ -181,7 +191,7 @@ fn main() {
                     .expect("Could not receive rerender");
             }
             4 => {
-                let key = key_input.try_recv().expect("Could not receive key");
+                let key = event_inputs.0.try_recv().expect("Could not receive key");
                 if handle_key(
                     key,
                     &mut key_matcher,
@@ -193,7 +203,11 @@ fn main() {
                 }
             }
             5 => {
-                let (width, height) = winsize_change
+                let _ = event_inputs.1.try_recv().expect("Could not receive mouse");
+            }
+            6 => {
+                let (width, height) = event_inputs
+                    .3
                     .try_recv()
                     .expect("Could not receive from win-size");
 
@@ -229,7 +243,8 @@ fn main() {
     RUNNING.store(false, Ordering::Release);
 
     /* ========================== Cook the terminal on exit ========================== */
-    execute!(io::stdout(), DisableMouseCapture).expect("Could not disable mouse capture");
+    execute!(io::stdout(), DisableMouseCapturePixels)
+        .expect("Could not disable mouse capture");
     execute!(io::stdout(), LeaveAlternateScreen).expect("Could not leave alt mode");
     execute!(io::stdout(), Show).expect("Could not show cursor");
     disable_raw_mode().expect("Could not uncook the terminal");

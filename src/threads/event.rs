@@ -1,19 +1,54 @@
-use std::{sync::atomic::Ordering, thread};
+use std::{fmt, sync::atomic::Ordering, thread};
 
 use crossbeam_channel::{unbounded, Receiver};
-use crossterm::event::{
-    read, Event, KeyCode, KeyEvent, KeyEventKind, KeyEventState, MouseEvent,
-    MouseEventKind,
+use crossterm::{
+    event::{
+        read, Event, KeyCode, KeyEvent, KeyEventKind, KeyEventState, MouseEvent,
+        MouseEventKind,
+    },
+    Command,
 };
 
 use crate::{drivers::graphics::GraphicsResponse, globals::RUNNING};
 
-pub fn spawn() -> (
-    Receiver<KeyEvent>,
-    Receiver<GraphicsResponse>,
-    Receiver<(u16, u16)>,
-) {
+/* A small hack to get cursor position in pixels
+ * Replacing ?1006 with ?1016h reports cursor position in pixels instead of cells */
+pub struct EnableMouseCapturePixels;
+impl Command for EnableMouseCapturePixels {
+    fn write_ansi(&self, f: &mut impl fmt::Write) -> fmt::Result {
+        f.write_str(concat!(
+            "\x1B[?1000h",
+            "\x1B[?1002h",
+            "\x1B[?1003h",
+            "\x1B[?1015h",
+            "\x1B[?1016h",
+        ))
+    }
+}
+
+pub struct DisableMouseCapturePixels;
+impl Command for DisableMouseCapturePixels {
+    fn write_ansi(&self, f: &mut impl fmt::Write) -> fmt::Result {
+        f.write_str(concat!(
+            "\x1B[?1016l",
+            "\x1B[?1015l",
+            "\x1B[?1003l",
+            "\x1B[?1002l",
+            "\x1B[?1000l",
+        ))
+    }
+}
+
+pub struct EventThreadData(
+    pub Receiver<KeyEvent>,
+    pub Receiver<MouseEvent>,
+    pub Receiver<GraphicsResponse>,
+    pub Receiver<(u16, u16)>,
+);
+
+pub fn spawn() -> EventThreadData {
     let (sender_key, receive_key) = unbounded::<KeyEvent>();
+    let (sender_mouse, receive_mouse) = unbounded::<MouseEvent>();
     let (sender_gr, receive_gr) = unbounded::<GraphicsResponse>();
     let (sender_ws, receive_ws) = unbounded::<(u16, u16)>();
 
@@ -87,7 +122,11 @@ pub fn spawn() -> (
                             })
                             .expect("Could not send key event");
                     }
-                    _ => (),
+                    x => {
+                        sender_mouse
+                            .try_send(x)
+                            .expect("Could not send mouse event");
+                    }
                 },
                 Event::Resize(width, height) => {
                     sender_ws
@@ -99,5 +138,5 @@ pub fn spawn() -> (
         }
     });
 
-    (receive_key, receive_gr, receive_ws)
+    EventThreadData(receive_key, receive_mouse, receive_gr, receive_ws)
 }
