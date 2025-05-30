@@ -20,11 +20,12 @@
 <hr/>
 
 ## Why?
-There are multiple in-terminal PDF viewers for the Kitty terminal but the main problem is that the end-user can interact only by viewing one page at a time. The user may have the need to zoom in and out of the PDF document to view details in the document. Another problem is viewing continuous content which is split between multiple pages. Therefore it was decided to develop such PDF viewer which can operates in the same way as a classical GUI PDF viewer but which can additionally be controlled by powerful Vim-like keybindings.
+There are multiple in-terminal PDF viewers for the Kitty terminal but the main problem is that the end-user can interact only by viewing one page at a time. The user may have the need to zoom in and out of the PDF document to view details in the document. Another problem is viewing continuous content which is split between multiple pages. Therefore it was decided to develop such PDF viewer which can operates in the same way as a classical GUI PDF viewer but that can additionally be controlled by powerful and customizable Vim-like keybindings.
 
 <hr/>
 
 ## Table of Contents
+- [Features](#features)
 - [Requirements](#requirements)
 - [Installation](#installation)
 - [Usage](#usage)
@@ -37,6 +38,17 @@ There are multiple in-terminal PDF viewers for the Kitty terminal but the main p
 - [Attributions](#attributions)
 
 <hr/>
+
+## Features
+- Viewer control using mouse/touchpad/keyboard
+- Toggling of alpha and/or inverse color modes
+- Responsive clicking and link hovering
+- Customization of keybindings
+- URI path annotation bar
+- Multi-threaded
+- Cross-platform 
+- ..
+- General high customizability
 
 ## Requirements
 - Cargo
@@ -51,6 +63,8 @@ The project is easily built and installed using Cargo:
 ```sh
 $ cargo build --release && cargo install -path .
 ```
+
+Another method is to download the pre-compiled binaries [here](https://github.com/monoamine11231/meowpdf/releases/tag/v1.2.0).
 
 <div align="right"><kbd><a href="#table-of-contents">↑ Back to top ↑</a></kbd></div>
 <hr/>
@@ -127,6 +141,7 @@ The allowed color strings are listed [here](https://docs.rs/crossterm/latest/src
 - [x] Implement or find a standard on parsing stdin key inputs.
 - [x] Allow for link clicking using the mouse.
 - [x] Allow custom remapping of keybindings.
+- [ ] Command bar to manually jump to different pages and search for text
 
 ### In progress
 - [x] Implement auto-scaling of the PDF document on opening based on terminal size.
