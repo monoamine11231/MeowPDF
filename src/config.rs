@@ -3,6 +3,7 @@ use std::{
     io::{Read, Write},
 };
 
+use crossterm::style::Color;
 use dirs::config_dir;
 use keybinds::Keybinds;
 use serde::Deserialize;
@@ -24,6 +25,16 @@ pub struct ConfigViewer {
     pub scale_amount: f32,
     pub margin_bottom: f32,
     pub pages_preloaded: usize,
+
+    pub uri_hint: ConfigViewerUriHint,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ConfigViewerUriHint {
+    pub enabled: bool,
+    pub background: Color,
+    pub foreground: Color,
+    pub width: f32,
 }
 
 #[derive(Debug, Deserialize)]

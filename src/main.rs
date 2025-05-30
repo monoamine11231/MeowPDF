@@ -1,7 +1,7 @@
 mod drivers;
 use crate::drivers::commands::ClearImages;
 use crossterm::cursor::{Hide, Show};
-use crossterm::event::{KeyCode, KeyEvent};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
 use crossterm::execute;
 use crossterm::terminal::{
     disable_raw_mode, enable_raw_mode, window_size, Clear, ClearType,
@@ -130,9 +130,16 @@ fn main() {
         inverse: SystemTime::now() - Duration::from_millis(500),
     };
 
+    let mut current_mouse = MouseEvent {
+        kind: MouseEventKind::Moved,
+        column: u16::MAX,
+        row: u16::MAX,
+        modifiers: KeyModifiers::NONE,
+    };
+
     'main: loop {
         /* sel[0..1] are the results from the renderer thread */
-        let mut sel = result_receiver.construct_select();
+        let mut sel = result_receiver.construct_biased_select();
         sel.recv(&file_reload);
         sel.recv(&sender_rerender);
         /* Key event */
@@ -143,6 +150,10 @@ fn main() {
         sel.recv(&event_inputs.3);
 
         let index_ready = sel.ready();
+
+        execute!(io::stdout(), ClearImages, Clear(ClearType::FromCursorDown))
+            .expect("Could not clear images");
+
         match index_ready {
             0 | 1 => {
                 let result = result_receiver
@@ -204,26 +215,8 @@ fn main() {
                 }
             }
             5 => {
-                let mouse = event_inputs.1.try_recv().expect("Could not receive mouse");
-                if let Some(link) = viewer.intersect_link(mouse) {
-                    execute!(io::stdout(), SetPointerShape(PointerShape::Pointer))
-                        .expect("Could not set pointer shape");
-
-                    if mouse.kind.is_down() {
-                        /* URI points to page in this document */
-                        if link.uri.starts_with('#') {
-                            let _ = viewer.jump(link.page as usize);
-                        } else {
-                            let _ = open::that_detached(link.uri);
-                        }
-
-                        execute!(io::stdout(), SetPointerShape(PointerShape::Default))
-                            .expect("Could not set pointer shape");
-                    }
-                } else {
-                    execute!(io::stdout(), SetPointerShape(PointerShape::Default))
-                        .expect("Could not set pointer shape");
-                }
+                current_mouse =
+                    event_inputs.1.try_recv().expect("Could not receive mouse");
             }
             6 => {
                 let (width, height) = event_inputs
@@ -242,10 +235,33 @@ fn main() {
             _ => unreachable!(),
         };
 
+        if let Some(link) = viewer.intersect_link(current_mouse) {
+            execute!(io::stdout(), SetPointerShape(PointerShape::Pointer))
+                .expect("Could not set pointer shape");
+
+            viewer.uri_hint(&link);
+            if current_mouse.kind.is_down() {
+                /* URI points to page in this document */
+                if link.uri.starts_with('#') {
+                    let _ = viewer.jump(link.page as usize);
+                } else {
+                    let _ = open::that_detached(link.uri);
+                }
+
+                execute!(io::stdout(), SetPointerShape(PointerShape::Default))
+                    .expect("Could not set pointer shape");
+
+                /* Since the mouse position is saved but this loop runs on other triggers
+                 * such as key press, don't allow the mouse to accidentely click on other
+                 * links when the viewer is scrolled down by key presses */
+                current_mouse.kind = MouseEventKind::Moved;
+            }
+        } else {
+            execute!(io::stdout(), SetPointerShape(PointerShape::Default))
+                .expect("Could not set pointer shape");
+        }
+
         let gr = RECEIVER_GR.get().unwrap().lock().unwrap();
-
-        execute!(io::stdout(), ClearImages).expect("Could not clear images");
-
         let displayed = viewer
             .display_pages(&renderer)
             .expect("Could not display pages");

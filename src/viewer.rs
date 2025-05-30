@@ -1,11 +1,17 @@
 use core::f32;
 use std::{
     collections::{HashMap, VecDeque},
+    io,
     sync::{Arc, RwLock},
 };
 
 use crossbeam_channel::{unbounded, Receiver, Sender};
-use crossterm::event::MouseEvent;
+use crossterm::{
+    cursor::{MoveToRow, RestorePosition, SavePosition},
+    event::MouseEvent,
+    execute,
+    style::{Print, ResetColor, SetBackgroundColor, SetForegroundColor},
+};
 use mupdf::Link;
 
 use crate::{threads::renderer::*, Image, CONFIG, TERMINAL_SIZE};
@@ -395,6 +401,42 @@ impl Viewer {
         intersected_link?;
 
         Some(intersected_link.unwrap().clone())
+    }
+
+    pub fn uri_hint(&self, link: &Link) {
+        let config = CONFIG.get().unwrap();
+        if !config.viewer.uri_hint.enabled {
+            return;
+        }
+
+        let terminal_size = TERMINAL_SIZE.get().unwrap().read().unwrap();
+
+        let width = (terminal_size.width as f32 * config.viewer.uri_hint.width) as usize;
+        if width < 5 {
+            return;
+        }
+
+        let text = if link.uri.len() <= width {
+            if link.uri.starts_with('#') {
+                format!("Page {}", link.page + 1)
+            } else {
+                link.uri.to_string()
+            }
+        } else {
+            format!("{}..", &link.uri[0..(width - 2)])
+        };
+
+        execute!(
+            io::stdout(),
+            SavePosition,
+            MoveToRow(terminal_size.rows),
+            SetBackgroundColor(config.viewer.uri_hint.background),
+            SetForegroundColor(config.viewer.uri_hint.foreground),
+            Print(text),
+            ResetColor,
+            RestorePosition
+        )
+        .unwrap();
     }
 
     pub fn handle_image(&mut self, page: usize, image: Option<Arc<RwLock<Image>>>) {
