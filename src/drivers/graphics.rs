@@ -1,6 +1,4 @@
 use base64::{engine::general_purpose::STANDARD, Engine};
-use core::fmt;
-use crossterm::Command;
 use std::{
     collections::HashMap,
     fs::File,
@@ -175,13 +173,5 @@ impl GraphicsResponse {
 
     pub fn payload(&self) -> &str {
         self.payload.as_str()
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ClearImages;
-impl Command for ClearImages {
-    fn write_ansi(&self, f: &mut impl fmt::Write) -> fmt::Result {
-        f.write_str("\x1B_Ga=d,d=a\x1B\\")
     }
 }

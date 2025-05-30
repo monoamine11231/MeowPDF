@@ -5,7 +5,7 @@ use std::{
 };
 
 use crossbeam_channel::{unbounded, Receiver, Sender};
-use mupdf::{Colorspace, Document, Error, Matrix, Page, Pixmap};
+use mupdf::{Colorspace, Document, Error, Link, Matrix, Page, Pixmap};
 
 use crate::{
     config::Config,
@@ -28,6 +28,7 @@ pub enum RendererResult {
         max_page_width: f32,
         cumulative_heights: Vec<f32>,
         widths: Vec<f32>,
+        links: Vec<Vec<Link>>,
     },
     Image {
         page: usize,
@@ -77,6 +78,7 @@ impl<'a> RendererInnerState<'a> {
         let mut max_page_width = -f32::INFINITY;
         let mut cumulative_heights = Vec::new();
         let mut widths = Vec::new();
+        let mut links = Vec::new();
 
         self.document = Document::open(&self.file)
             .map_err(|x| format!("Could not open the given PDF file: {}", x))?;
@@ -103,7 +105,6 @@ impl<'a> RendererInnerState<'a> {
             let width: f32 = bounds.width();
             let height: f32 = bounds.height();
 
-            self.cache.push(page);
             max_page_width = f32::max(max_page_width, width);
             cumulative_heights.push(
                 cumulative_heights.last().unwrap_or(&0.0f32)
@@ -111,12 +112,15 @@ impl<'a> RendererInnerState<'a> {
                     + self.config.viewer.margin_bottom,
             );
             widths.push(width);
+            links.push(page.links().expect("Could not extract links").collect());
+            self.cache.push(page);
         }
 
         Ok(RendererResult::PageMetadata {
             max_page_width,
             cumulative_heights,
             widths,
+            links,
         })
     }
 }

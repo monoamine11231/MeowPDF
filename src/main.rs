@@ -1,4 +1,5 @@
 mod drivers;
+use crate::drivers::commands::ClearImages;
 use crossbeam_channel::Receiver;
 use crossterm::cursor::{Hide, Show};
 use crossterm::event::{KeyCode, KeyEvent};
@@ -7,10 +8,11 @@ use crossterm::terminal::{
     disable_raw_mode, enable_raw_mode, window_size, Clear, ClearType,
     EnterAlternateScreen, LeaveAlternateScreen, WindowSize,
 };
-use drivers::graphics::ClearImages;
+use drivers::commands::{
+    DisableMouseCapturePixels, EnableMouseCapturePixels, PointerShape, SetPointerShape,
+};
 use drivers::graphics::{terminal_graphics_test_support, GraphicsResponse};
 use keybinds::{KeyInput, Keybinds};
-use threads::event::{DisableMouseCapturePixels, EnableMouseCapturePixels};
 
 mod threads;
 
@@ -155,6 +157,7 @@ fn main() {
                         max_page_width,
                         cumulative_heights,
                         widths,
+                        links,
                     } => {
                         let uninit = viewer.is_uninit();
 
@@ -162,6 +165,7 @@ fn main() {
                             max_page_width,
                             &cumulative_heights,
                             &widths,
+                            &links,
                         );
                         viewer.invalidate_registry();
                         viewer.center_viewer();
@@ -203,7 +207,26 @@ fn main() {
                 }
             }
             5 => {
-                let _ = event_inputs.1.try_recv().expect("Could not receive mouse");
+                let mouse = event_inputs.1.try_recv().expect("Could not receive mouse");
+                if let Some(link) = viewer.intersect_link(mouse) {
+                    execute!(io::stdout(), SetPointerShape(PointerShape::Pointer))
+                        .expect("Could not set pointer shape");
+
+                    if mouse.kind.is_down() {
+                        /* URI points to page in this document */
+                        if link.uri.starts_with('#') {
+                            let _ = viewer.jump(link.page as usize);
+                        } else {
+                            let _ = open::that_detached(link.uri);
+                        }
+
+                        execute!(io::stdout(), SetPointerShape(PointerShape::Default))
+                            .expect("Could not set pointer shape");
+                    }
+                } else {
+                    execute!(io::stdout(), SetPointerShape(PointerShape::Default))
+                        .expect("Could not set pointer shape");
+                }
             }
             6 => {
                 let (width, height) = event_inputs

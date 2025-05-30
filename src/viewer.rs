@@ -5,7 +5,8 @@ use std::{
 };
 
 use crossbeam_channel::{unbounded, Receiver, Sender};
-use crossterm::terminal::WindowSize;
+use crossterm::{event::MouseEvent, terminal::WindowSize};
+use mupdf::Link;
 
 use crate::{threads::renderer::*, Config, Image, CONFIG, TERMINAL_SIZE};
 
@@ -17,6 +18,89 @@ pub struct DisplayRect {
     pub height: i32,
 }
 
+pub trait Point {
+    fn x(&self) -> i32;
+    fn y(&self) -> i32;
+}
+
+pub trait Rect {
+    fn x(&self) -> i32;
+    fn y(&self) -> i32;
+    fn width(&self) -> i32;
+    fn height(&self) -> i32;
+}
+
+fn rect_point_intersect<R: Rect, P: Point>(rect: &R, point: &P) -> bool {
+    let rect_x = rect.x();
+    let rect_y = rect.y();
+    let rect_width = rect.width();
+    let rect_height = rect.height();
+
+    let point_x = point.x();
+    let point_y = point.y();
+
+    let cr1 = point_x >= rect_x && point_x <= (rect_x + rect_width);
+    let cr2 = point_y >= rect_y && point_y <= (rect_y + rect_height);
+
+    cr1 && cr2
+}
+
+impl Point for MouseEvent {
+    fn x(&self) -> i32 {
+        self.column as i32
+    }
+
+    fn y(&self) -> i32 {
+        self.row as i32
+    }
+}
+
+impl Point for (i32, i32) {
+    fn x(&self) -> i32 {
+        self.0
+    }
+
+    fn y(&self) -> i32 {
+        self.1
+    }
+}
+
+impl Rect for DisplayRect {
+    fn x(&self) -> i32 {
+        self.x as i32
+    }
+
+    fn y(&self) -> i32 {
+        self.y as i32
+    }
+
+    fn width(&self) -> i32 {
+        self.width as i32
+    }
+
+    fn height(&self) -> i32 {
+        self.height as i32
+    }
+}
+
+impl Rect for mupdf::rect::Rect {
+    fn x(&self) -> i32 {
+        self.x0 as i32
+    }
+
+    fn y(&self) -> i32 {
+        self.y0 as i32
+    }
+
+    fn width(&self) -> i32 {
+        (self.x1 - self.x0) as i32
+    }
+
+    fn height(&self) -> i32 {
+        (self.y1 - self.y0) as i32
+    }
+}
+
 pub struct Viewer {
     scale: f32,
     page_first: usize,  /* The first page in the view */
@@ -26,6 +110,7 @@ pub struct Viewer {
     max_width: f32,
     cumulative_heights: Vec<f32>,
     widths: Vec<f32>,
+    links: Vec<Vec<Link>>,
 
     pub images: HashMap<usize, Arc<RwLock<Image>>>,
     invalidated: HashMap<usize, ()>,
@@ -48,6 +133,7 @@ impl Viewer {
                 max_width: -f32::INFINITY,
                 cumulative_heights: Vec::new(),
                 widths: Vec::new(),
+                links: Vec::new(),
                 images: HashMap::new(),
                 invalidated: HashMap::new(),
                 scheduled4render: HashMap::new(),
@@ -68,10 +154,12 @@ impl Viewer {
         max_width: f32,
         cumulative_heights: &[f32],
         widths: &[f32],
+        links: &[Vec<Link>],
     ) {
         self.max_width = max_width;
         self.cumulative_heights = cumulative_heights.to_owned();
         self.widths = widths.to_owned();
+        self.links = links.to_owned();
     }
 
     pub fn invalidate_registry(&mut self) {
@@ -93,9 +181,11 @@ impl Viewer {
     }
 
     pub fn jump(&mut self, page: usize) -> Result<(), String> {
-        if page >= self.cumulative_heights.len() {
-            Err("Given page number is larger than the number of pages")?;
-        }
+        let res = if page >= self.cumulative_heights.len() {
+            Err("Given page number is larger than the number of pages".to_owned())
+        } else {
+            Ok(())
+        };
 
         self.page_first = usize::min(page, self.cumulative_heights.len() - 1);
 
@@ -106,7 +196,7 @@ impl Viewer {
         }
         self.bound_viewer();
 
-        Ok(())
+        res
     }
 
     pub fn scale(&mut self, scale: f32) {
@@ -279,6 +369,44 @@ impl Viewer {
     }
 
     /* ================================ Miscellaneous ================================ */
+    pub fn intersect_link(&self, mouse: MouseEvent) -> Option<Link> {
+        let mut intersected_page = None;
+        let mut intersected_rect = None;
+        for bound in self.calculate_display_bounds() {
+            let (page, rect) = bound;
+            if rect_point_intersect(&rect, &mouse) {
+                intersected_page = Some(page);
+                intersected_rect = Some(rect);
+                break;
+            }
+        }
+
+        if intersected_page.is_none() {
+            return None;
+        }
+
+        let page_point = (
+            ((mouse.column as i32 - intersected_rect.unwrap().x as i32) as f32
+                / self.scale) as i32,
+            ((mouse.row as i32 - intersected_rect.unwrap().y as i32) as f32 / self.scale)
+                as i32,
+        );
+        let mut intersected_link = None;
+        let links = &self.links[intersected_page.unwrap()];
+        for link in links.into_iter() {
+            if rect_point_intersect(&link.bounds, &page_point) {
+                intersected_link = Some(link);
+                break;
+            }
+        }
+
+        if intersected_link.is_none() {
+            return None;
+        }
+
+        Some(intersected_link.unwrap().clone())
+    }
+
     pub fn handle_image(&mut self, page: usize, image: Option<Arc<RwLock<Image>>>) {
         macro_rules! remove_image {
             ($page:expr) => {

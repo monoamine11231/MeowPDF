@@ -1,43 +1,12 @@
-use std::{fmt, sync::atomic::Ordering, thread};
+use std::{sync::atomic::Ordering, thread};
 
 use crossbeam_channel::{unbounded, Receiver};
-use crossterm::{
-    event::{
-        read, Event, KeyCode, KeyEvent, KeyEventKind, KeyEventState, MouseEvent,
-        MouseEventKind,
-    },
-    Command,
+use crossterm::event::{
+    read, Event, KeyCode, KeyEvent, KeyEventKind, KeyEventState, MouseEvent,
+    MouseEventKind,
 };
 
 use crate::{drivers::graphics::GraphicsResponse, globals::RUNNING};
-
-/* A small hack to get cursor position in pixels
- * Replacing ?1006 with ?1016h reports cursor position in pixels instead of cells */
-pub struct EnableMouseCapturePixels;
-impl Command for EnableMouseCapturePixels {
-    fn write_ansi(&self, f: &mut impl fmt::Write) -> fmt::Result {
-        f.write_str(concat!(
-            "\x1B[?1000h",
-            "\x1B[?1002h",
-            "\x1B[?1003h",
-            "\x1B[?1015h",
-            "\x1B[?1016h",
-        ))
-    }
-}
-
-pub struct DisableMouseCapturePixels;
-impl Command for DisableMouseCapturePixels {
-    fn write_ansi(&self, f: &mut impl fmt::Write) -> fmt::Result {
-        f.write_str(concat!(
-            "\x1B[?1016l",
-            "\x1B[?1015l",
-            "\x1B[?1003l",
-            "\x1B[?1002l",
-            "\x1B[?1000l",
-        ))
-    }
-}
 
 pub struct EventThreadData(
     pub Receiver<KeyEvent>,
@@ -79,6 +48,7 @@ pub fn spawn() -> EventThreadData {
                                 state: KeyEventState::NONE,
                             })
                             .expect("Could not send key event");
+                        sender_mouse.try_send(event).expect("Could not send mouse");
                     }
                     MouseEvent {
                         kind: MouseEventKind::ScrollLeft,
@@ -93,6 +63,7 @@ pub fn spawn() -> EventThreadData {
                                 state: KeyEventState::NONE,
                             })
                             .expect("Could not send key event");
+                        sender_mouse.try_send(event).expect("Could not send mouse");
                     }
                     MouseEvent {
                         kind: MouseEventKind::ScrollRight,
@@ -107,6 +78,7 @@ pub fn spawn() -> EventThreadData {
                                 state: KeyEventState::NONE,
                             })
                             .expect("Could not send key event");
+                        sender_mouse.try_send(event).expect("Could not send mouse");
                     }
                     MouseEvent {
                         kind: MouseEventKind::ScrollDown,
@@ -121,6 +93,7 @@ pub fn spawn() -> EventThreadData {
                                 state: KeyEventState::NONE,
                             })
                             .expect("Could not send key event");
+                        sender_mouse.try_send(event).expect("Could not send mouse");
                     }
                     x => {
                         sender_mouse
