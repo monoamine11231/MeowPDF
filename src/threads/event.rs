@@ -8,12 +8,16 @@ use crossterm::event::{
 
 use crate::{drivers::graphics::GraphicsResponse, globals::RUNNING};
 
-pub fn spawn() -> (
-    Receiver<KeyEvent>,
-    Receiver<GraphicsResponse>,
-    Receiver<(u16, u16)>,
-) {
+pub struct EventThreadData(
+    pub Receiver<KeyEvent>,
+    pub Receiver<MouseEvent>,
+    pub Receiver<GraphicsResponse>,
+    pub Receiver<(u16, u16)>,
+);
+
+pub fn spawn() -> EventThreadData {
     let (sender_key, receive_key) = unbounded::<KeyEvent>();
+    let (sender_mouse, receive_mouse) = unbounded::<MouseEvent>();
     let (sender_gr, receive_gr) = unbounded::<GraphicsResponse>();
     let (sender_ws, receive_ws) = unbounded::<(u16, u16)>();
 
@@ -44,6 +48,7 @@ pub fn spawn() -> (
                                 state: KeyEventState::NONE,
                             })
                             .expect("Could not send key event");
+                        sender_mouse.try_send(event).expect("Could not send mouse");
                     }
                     MouseEvent {
                         kind: MouseEventKind::ScrollLeft,
@@ -58,6 +63,7 @@ pub fn spawn() -> (
                                 state: KeyEventState::NONE,
                             })
                             .expect("Could not send key event");
+                        sender_mouse.try_send(event).expect("Could not send mouse");
                     }
                     MouseEvent {
                         kind: MouseEventKind::ScrollRight,
@@ -72,6 +78,7 @@ pub fn spawn() -> (
                                 state: KeyEventState::NONE,
                             })
                             .expect("Could not send key event");
+                        sender_mouse.try_send(event).expect("Could not send mouse");
                     }
                     MouseEvent {
                         kind: MouseEventKind::ScrollDown,
@@ -86,8 +93,13 @@ pub fn spawn() -> (
                                 state: KeyEventState::NONE,
                             })
                             .expect("Could not send key event");
+                        sender_mouse.try_send(event).expect("Could not send mouse");
                     }
-                    _ => (),
+                    x => {
+                        sender_mouse
+                            .try_send(x)
+                            .expect("Could not send mouse event");
+                    }
                 },
                 Event::Resize(width, height) => {
                     sender_ws
@@ -99,5 +111,5 @@ pub fn spawn() -> (
         }
     });
 
-    (receive_key, receive_gr, receive_ws)
+    EventThreadData(receive_key, receive_mouse, receive_gr, receive_ws)
 }

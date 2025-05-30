@@ -1,11 +1,9 @@
-use std::sync::{
-    atomic::{AtomicUsize, Ordering},
-    RwLockReadGuard,
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+use crate::{
+    drivers::graphics::*, viewer::DisplayRect, CONFIG, IMAGE_PADDING, TERMINAL_SIZE,
 };
 
-use crate::{drivers::graphics::*, Config, CONFIG, IMAGE_PADDING, TERMINAL_SIZE};
-
-use crossterm::terminal::WindowSize;
 use mupdf::Pixmap;
 
 pub struct Image {
@@ -20,9 +18,9 @@ impl Image {
         static ID: AtomicUsize = AtomicUsize::new(1);
 
         const PADDING_CLR: u8 = 0u8;
-        let padding: usize = *IMAGE_PADDING.get().unwrap();
+        let padding = *IMAGE_PADDING.get().unwrap();
 
-        let mut data: Vec<u8> = Vec::with_capacity(
+        let mut data = Vec::with_capacity(
             (2 * padding + pixmap.width() as usize) * padding * 8
                 + padding * 8
                 + (pixmap.samples().len() / 3) * 4,
@@ -58,7 +56,7 @@ impl Image {
             (2 * padding + pixmap.width() as usize) * padding * 4,
         ));
 
-        let image: Image = Self {
+        let image = Self {
             id: ID.load(Ordering::Acquire),
             dimensions: (pixmap.width() as i32, pixmap.height() as i32),
             data,
@@ -87,71 +85,62 @@ impl Image {
         Ok(())
     }
 
-    pub fn display(&self, x: i32, y: i32, scale: f64) -> Result<bool, String> {
+    pub fn display(&self, rect: DisplayRect) -> Result<bool, String> {
         /* `true` indicates that the image was actually displayed and was not
          * tried to be displayed outside of the viewpoint */
 
-        let config: &Config = CONFIG.get().unwrap();
-        let padding: usize = *IMAGE_PADDING.get().unwrap();
+        let config = CONFIG.get().unwrap();
+        let padding = *IMAGE_PADDING.get().unwrap();
+        let render_precision = config.viewer.render_precision;
 
-        let (pxpercol, pxperrow): (f64, f64);
-        let (col0, col1, row0, row1): (f64, f64, f64, f64);
-        let (padding_top, padding_bottom): (f64, f64);
-        let (padding_left, padding_right): (f64, f64);
-        let (cropx, cropy, cropw, croph): (usize, usize, usize, usize);
+        let scale = rect.height as f64 / (self.dimensions.1 as f64 / render_precision);
+        let render_precision_norm = render_precision / scale;
 
-        let terminal_size: RwLockReadGuard<WindowSize> =
-            TERMINAL_SIZE.get().unwrap().read().unwrap();
+        let (pxpercol, pxperrow);
+        let (col0, col1, row0, row1);
+        let (padding_top, padding_bottom);
+        let (padding_left, padding_right);
+        let (cropx, cropy, cropw, croph);
+
+        let terminal_size = TERMINAL_SIZE.get().unwrap().read().unwrap();
 
         pxpercol = terminal_size.width as f64 / terminal_size.columns as f64;
         pxperrow = terminal_size.height as f64 / terminal_size.rows as f64;
 
-        if x < 0 {
+        if rect.x < 0 {
             col0 = 0.0f64;
         } else {
-            col0 = x as f64 / pxpercol;
+            col0 = rect.x as f64 / pxpercol;
         }
-        col1 = (x as f64
-            + self.dimensions.0 as f64 * scale / config.viewer.render_precision)
-            / pxpercol;
+        col1 = (rect.x as f64 + rect.width as f64) / pxpercol;
 
-        if y < 0 {
+        if rect.y < 0 {
             row0 = 0.0f64;
         } else {
-            row0 = y as f64 / pxperrow;
+            row0 = rect.y as f64 / pxperrow;
         }
-        row1 = (y as f64
-            + self.dimensions.1 as f64 * scale / config.viewer.render_precision)
-            / pxperrow;
+        row1 = (rect.y as f64 + rect.height as f64) / pxperrow;
 
         /* Round up to the nearest whole col and row so that is guaranteed that the
          * the whole image is rendered without being shrinked down. `padding_*` values
          * tell how much of the image's invinsible padding should be included at each
          * side when displaying the image on an area of integer rows and column */
-        padding_left =
-            (col0 - col0.floor()) * pxpercol * config.viewer.render_precision / scale;
-        padding_right =
-            (col1.ceil() - col1) * pxpercol * config.viewer.render_precision / scale;
-        padding_top =
-            (row0 - row0.floor()) * pxperrow * config.viewer.render_precision / scale;
-        padding_bottom =
-            (row1.ceil() - row1) * pxperrow * config.viewer.render_precision / scale;
+        padding_left = (col0 - col0.floor()) * pxpercol * render_precision_norm;
+        padding_right = (col1.ceil() - col1) * pxpercol * render_precision_norm;
+        padding_top = (row0 - row0.floor()) * pxperrow * render_precision_norm;
+        padding_bottom = (row1.ceil() - row1) * pxperrow * render_precision_norm;
 
-        if x < 0 {
-            cropx = (padding as f64 - x as f64 * config.viewer.render_precision / scale)
-                as usize;
-            cropw = ((col1 * pxpercol * config.viewer.render_precision / scale)
-                + padding_right) as usize;
+        if rect.x < 0 {
+            cropx = (padding as f64 - rect.x as f64 * render_precision_norm) as usize;
+            cropw = ((col1 * pxpercol * render_precision_norm) + padding_right) as usize;
         } else {
             cropx = (padding as f64 - padding_left) as usize;
             cropw = (padding_left + padding_right + self.dimensions.0 as f64) as usize;
         }
 
-        if y < 0 {
-            cropy = (padding as f64 - y as f64 * config.viewer.render_precision / scale)
-                as usize;
-            croph = ((row1 * pxperrow * config.viewer.render_precision / scale)
-                + padding_bottom) as usize;
+        if rect.y < 0 {
+            cropy = (padding as f64 - rect.y as f64 * render_precision_norm) as usize;
+            croph = ((row1 * pxperrow * render_precision_norm) + padding_bottom) as usize;
         } else {
             cropy = (padding as f64 - padding_top) as usize;
             croph = (padding_top + padding_bottom + self.dimensions.1 as f64) as usize;
@@ -180,7 +169,7 @@ impl Image {
     }
 
     pub fn transfer(&self) -> Result<(), String> {
-        let padding: usize = *IMAGE_PADDING.get().unwrap();
+        let padding = *IMAGE_PADDING.get().unwrap();
 
         terminal_graphics_transfer_bitmap(
             self.id,
@@ -191,11 +180,5 @@ impl Image {
         )?;
 
         Ok(())
-    }
-}
-
-impl Drop for Image {
-    fn drop(&mut self) {
-        // let _ = terminal_graphics_deallocate_id(self.id);
     }
 }

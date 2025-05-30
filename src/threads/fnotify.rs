@@ -16,8 +16,7 @@ pub fn spawn(file: &str) -> Result<Receiver<()>, String> {
 
     let mut watcher_file =
         notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
-            let event: notify::Event =
-                res.expect("Could not watch file changes for the given file");
+            let event = res.expect("Could not watch file changes for the given file");
 
             if let notify::EventKind::Modify(ModifyKind::Data(DataChange::Any)) =
                 event.kind

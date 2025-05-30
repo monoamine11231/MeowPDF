@@ -12,6 +12,8 @@ scroll_speed = 20.0
 render_precision = 1.5
 # Determines the image data limit that the software holds in RAM (bytes)
 memory_limit = 314572800
+# Minimum scale amount allowed
+scale_min = 0.2
 # Determines the default scale of the viewer when starting the viewer
 scale_default = 0.5
 # Determines the scaling amount when zooming in or out
@@ -20,6 +22,16 @@ scale_amount = 0.5
 margin_bottom = 10.0
 # Determines the amount of pages that are preloaded in advance 
 pages_preloaded = 3
+
+[viewer.uri_hint]
+# Enabled URI hints
+enabled = true
+# Background color of hint bar
+background = "blue"
+# Foreground color of hint bar text
+foreground = "white"
+# Hint bar width percentage based on terminal width
+width = 0.2 
 
 [bindings]
 "a" = "ToggleAlpha"

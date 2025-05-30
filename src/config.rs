@@ -1,9 +1,9 @@
 use std::{
     fs::File,
     io::{Read, Write},
-    path::PathBuf,
 };
 
+use crossterm::style::Color;
 use dirs::config_dir;
 use keybinds::Keybinds;
 use serde::Deserialize;
@@ -25,6 +25,16 @@ pub struct ConfigViewer {
     pub scale_amount: f32,
     pub margin_bottom: f32,
     pub pages_preloaded: usize,
+
+    pub uri_hint: ConfigViewerUriHint,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ConfigViewerUriHint {
+    pub enabled: bool,
+    pub background: Color,
+    pub foreground: Color,
+    pub width: f32,
 }
 
 #[derive(Debug, Deserialize)]
@@ -40,20 +50,20 @@ pub enum ConfigAction {
 }
 
 pub fn config_load_or_create() -> Result<Config, String> {
-    let mut config: PathBuf =
+    let mut config =
         config_dir().ok_or("Incompatible OS: No config directory has been found")?;
     config.push(CONFIG_FILENAME);
 
-    let mut config_content: String = String::new();
+    let mut config_content = String::new();
     if !config.as_path().exists() {
-        let mut config: File = File::create(config.as_path())
+        let mut config = File::create(config.as_path())
             .map_err(|x| format!("Could not create config file: {}", x))?;
         config
             .write(DEFAULT_CONFIG.as_bytes())
             .map_err(|x| format!("Could not write to config file: {}", x))?;
         config_content.push_str(DEFAULT_CONFIG);
     } else {
-        let mut config: File = File::open(config.as_path())
+        let mut config = File::open(config.as_path())
             .map_err(|x| format!("Could not open config file: {}", x))?;
 
         config

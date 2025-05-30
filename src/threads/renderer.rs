@@ -5,7 +5,7 @@ use std::{
 };
 
 use crossbeam_channel::{unbounded, Receiver, Sender};
-use mupdf::{Colorspace, Document, Error, Matrix, Page, Pixmap};
+use mupdf::{Colorspace, Document, Link, Matrix, Page};
 
 use crate::{
     config::Config,
@@ -27,6 +27,8 @@ pub enum RendererResult {
     PageMetadata {
         max_page_width: f32,
         cumulative_heights: Vec<f32>,
+        widths: Vec<f32>,
+        links: Vec<Vec<Link>>,
     },
     Image {
         page: usize,
@@ -55,7 +57,7 @@ impl<'a> RendererInnerState<'a> {
             .map_err(|x| format!("Could not open the given PDF file: {}", x))?;
 
         let config = CONFIG.get().unwrap();
-        let inner_state: RendererInnerState<'a> = Self {
+        let inner_state = Self {
             config,
             file,
             document,
@@ -75,22 +77,23 @@ impl<'a> RendererInnerState<'a> {
     pub fn load(&mut self) -> Result<RendererResult, String> {
         let mut max_page_width = -f32::INFINITY;
         let mut cumulative_heights = Vec::new();
+        let mut widths = Vec::new();
+        let mut links = Vec::new();
 
         self.document = Document::open(&self.file)
             .map_err(|x| format!("Could not open the given PDF file: {}", x))?;
-
         if !self.document.is_pdf() {
             Err("The given PDF file is not a PDF!".to_string())?;
         }
         self.cache.clear();
 
-        let page_count: i32 = self
+        let page_count = self
             .document
             .page_count()
             .map_err(|x| format!("Could not extract the number of pages: {}", x))?;
 
         for i in 0..page_count {
-            let page: Page = self
+            let page = self
                 .document
                 .load_page(i)
                 .map_err(|x| format!("Could not load page {}: {}", i, x))?;
@@ -99,21 +102,25 @@ impl<'a> RendererInnerState<'a> {
                 .bounds()
                 .map_err(|x| format!("Could not get bounds for page {}: {}", i, x))?;
 
-            let width: f32 = bounds.width();
-            let height: f32 = bounds.height();
+            let width = bounds.width();
+            let height = bounds.height();
 
-            self.cache.push(page);
             max_page_width = f32::max(max_page_width, width);
             cumulative_heights.push(
                 cumulative_heights.last().unwrap_or(&0.0f32)
                     + height
                     + self.config.viewer.margin_bottom,
             );
+            widths.push(width);
+            links.push(page.links().expect("Could not extract links").collect());
+            self.cache.push(page);
         }
 
         Ok(RendererResult::PageMetadata {
             max_page_width,
             cumulative_heights,
+            widths,
+            links,
         })
     }
 }
@@ -163,110 +170,113 @@ impl Renderer {
         let general_server_sender = self.general_server_sender.clone();
         let result_server_sender = self.result_server_sender.clone();
 
-        let thread_render: JoinHandle<Result<(), String>> =
-            thread::spawn(move || {
-                let priority_server_receiver = priority_server_receiver;
-                let general_server_sender = general_server_sender;
-                let result_server_sender = result_server_sender;
+        let thread_render = thread::spawn(move || {
+            let priority_server_receiver = priority_server_receiver;
+            let general_server_sender = general_server_sender;
+            let result_server_sender = result_server_sender;
 
-                let mut state = RendererInnerState::new(file_string)?;
+            let mut state = RendererInnerState::new(file_string)?;
 
-                let mut sel = priority_server_receiver.construct_biased_select();
+            let mut sel = priority_server_receiver.construct_biased_select();
 
-                while RUNNING.load(Ordering::Acquire) {
-                    let action = priority_server_receiver
-                        .recv_priority(sel.ready())
-                        .map_err(|x| format!("Could not receive from client: {}", x))?;
+            while RUNNING.load(Ordering::Acquire) {
+                let action = priority_server_receiver
+                    .recv_priority(sel.ready())
+                    .map_err(|x| format!("Could not receive from client: {}", x))?;
 
-                    match action {
-                        RendererAction::Display(_) => (),
-                        _ => {
-                            general_server_sender.try_send(action).map_err(|x| {
-                                format!("Could not send action to client: {}", x)
-                            })?;
-                        }
+                match action {
+                    RendererAction::Display(_) => (),
+                    _ => {
+                        general_server_sender.try_send(action).map_err(|x| {
+                            format!("Could not send action to client: {}", x)
+                        })?;
                     }
+                }
 
-                    match action {
-                        RendererAction::Load => {
-                            priority_server_receiver.clear_priority(0);
-                            let result = state.load()?;
+                match action {
+                    RendererAction::Load => {
+                        priority_server_receiver.clear_priority(0);
+                        let result = state.load()?;
 
-                            // Clear the scheduled pages for rendering
-                            priority_server_receiver.clear_priority(1);
+                        // Clear the scheduled pages for rendering
+                        priority_server_receiver.clear_priority(1);
 
-                            result_server_sender.try_send_priority(result, 0).map_err(
-                                |x| format!("Could not send results to client: {}", x),
-                            )?;
-                        }
-                        RendererAction::ToggleAlpha => {
-                            state.alpha = !state.alpha;
+                        result_server_sender.try_send_priority(result, 0).map_err(
+                            |x| format!("Could not send results to client: {}", x),
+                        )?;
+                    }
+                    RendererAction::ToggleAlpha => {
+                        state.alpha = !state.alpha;
 
-                            // Clear the scheduled pages for rendering
-                            priority_server_receiver.clear_priority(1);
-                        }
-                        RendererAction::ToggleInverse => {
-                            state.inverse = !state.inverse;
+                        // Clear the scheduled pages for rendering
+                        priority_server_receiver.clear_priority(1);
+                    }
+                    RendererAction::ToggleInverse => {
+                        state.inverse = !state.inverse;
 
-                            // Clear the scheduled pages for rendering
-                            priority_server_receiver.clear_priority(1);
-                        }
-                        RendererAction::Display(page) => {
-                            if state.cache.get(page).is_none() {
-                                // Sending `None` as data signals that it should be
-                                // removed from the registry
-                                result_server_sender
-                                    .try_send_priority(
-                                        RendererResult::Image { page, data: None },
-                                        1,
-                                    )
-                                    .map_err(|x| {
-                                        format!("Could not send result to client: {}", x)
-                                    })?;
-                                continue;
-                            }
-
-                            /* Load the image */
-                            let data: Result<Pixmap, Error> = state.cache[page]
-                                .to_pixmap(&state.ctm, &state.cs, state.alpha, false);
-
-                            if data.is_err() {
-                                continue;
-                            }
-
-                            let mut data_unwrapped: Pixmap = data.unwrap();
-                            let n: usize = data_unwrapped.n() as usize;
-                            if state.inverse {
-                                for pixel in data_unwrapped.samples_mut().chunks_mut(n) {
-                                    pixel[0] = 255 - pixel[0];
-                                    pixel[1] = 255 - pixel[1];
-                                    pixel[2] = 255 - pixel[2];
-                                }
-                            }
-
-                            let res: Result<Image, String> = Image::new(&data_unwrapped);
-                            if res.is_err() {
-                                continue;
-                            }
-
-                            let image: Image = res.unwrap();
+                        // Clear the scheduled pages for rendering
+                        priority_server_receiver.clear_priority(1);
+                    }
+                    RendererAction::Display(page) => {
+                        if state.cache.get(page).is_none() {
+                            // Sending `None` as data signals that it should be
+                            // removed from the registry
                             result_server_sender
                                 .try_send_priority(
-                                    RendererResult::Image {
-                                        page,
-                                        data: Some(Arc::new(RwLock::new(image))),
-                                    },
+                                    RendererResult::Image { page, data: None },
                                     1,
                                 )
                                 .map_err(|x| {
-                                    format!("Could not send results to client: {}", x)
+                                    format!("Could not send result to client: {}", x)
                                 })?;
+                            continue;
                         }
-                    };
-                }
 
-                Ok(())
-            });
+                        /* Load the image */
+                        let data = state.cache[page].to_pixmap(
+                            &state.ctm,
+                            &state.cs,
+                            state.alpha,
+                            false,
+                        );
+
+                        if data.is_err() {
+                            continue;
+                        }
+
+                        let mut data_unwrapped = data.unwrap();
+                        let n = data_unwrapped.n() as usize;
+                        if state.inverse {
+                            for pixel in data_unwrapped.samples_mut().chunks_mut(n) {
+                                pixel[0] = 255 - pixel[0];
+                                pixel[1] = 255 - pixel[1];
+                                pixel[2] = 255 - pixel[2];
+                            }
+                        }
+
+                        let res = Image::new(&data_unwrapped);
+                        if res.is_err() {
+                            continue;
+                        }
+
+                        let image = res.unwrap();
+                        result_server_sender
+                            .try_send_priority(
+                                RendererResult::Image {
+                                    page,
+                                    data: Some(Arc::new(RwLock::new(image))),
+                                },
+                                1,
+                            )
+                            .map_err(|x| {
+                                format!("Could not send results to client: {}", x)
+                            })?;
+                    }
+                };
+            }
+
+            Ok(())
+        });
 
         /* ======================== Check and move the threads ======================= */
         if thread_render.is_finished() {

@@ -33,7 +33,7 @@ pub struct PriorityReceiver<T, const U: usize> {
 impl<T, const U: usize> PriorityReceiver<T, U> {
     #[allow(dead_code)]
     pub fn construct_select<'a>(&'a self) -> Select<'a> {
-        let mut sel: Select<'a> = Select::new();
+        let mut sel = Select::new();
         for i in 0..U {
             sel.recv(&self.receivers[i]);
         }
@@ -43,7 +43,7 @@ impl<T, const U: usize> PriorityReceiver<T, U> {
 
     #[allow(dead_code)]
     pub fn construct_biased_select<'a>(&'a self) -> Select<'a> {
-        let mut sel: Select<'a> = Select::new_biased();
+        let mut sel = Select::new_biased();
         for i in 0..U {
             sel.recv(&self.receivers[i]);
         }

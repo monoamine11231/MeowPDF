@@ -1,14 +1,16 @@
 mod drivers;
-use crossbeam_channel::Receiver;
+use crate::drivers::commands::ClearImages;
 use crossterm::cursor::{Hide, Show};
-use crossterm::event::{DisableMouseCapture, EnableMouseCapture, KeyCode, KeyEvent};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
 use crossterm::execute;
 use crossterm::terminal::{
     disable_raw_mode, enable_raw_mode, window_size, Clear, ClearType,
     EnterAlternateScreen, LeaveAlternateScreen, WindowSize,
 };
-use drivers::graphics::ClearImages;
-use drivers::graphics::{terminal_graphics_test_support, GraphicsResponse};
+use drivers::commands::{
+    DisableMouseCapturePixels, EnableMouseCapturePixels, PointerShape, SetPointerShape,
+};
+use drivers::graphics::terminal_graphics_test_support;
 use keybinds::{KeyInput, Keybinds};
 
 mod threads;
@@ -30,7 +32,7 @@ use std::hash::{BuildHasher, Hasher};
 use std::io;
 use std::sync::atomic::Ordering;
 use std::sync::Mutex;
-use std::sync::{MutexGuard, RwLock};
+use std::sync::RwLock;
 use std::time::{Duration, SystemTime};
 
 /* Tracks the last executed times of signals for throattling */
@@ -46,17 +48,16 @@ fn main() {
     execute!(io::stdout(), EnterAlternateScreen).expect("Could not enter alt mode");
     execute!(io::stdout(), Hide).expect("Could not hide cursor");
     execute!(io::stdout(), Clear(ClearType::All)).expect("Could not clear terminal");
-    execute!(io::stdout(), EnableMouseCapture).expect("Could not enable mouse capture");
+    execute!(io::stdout(), EnableMouseCapturePixels)
+        .expect("Could not enable mouse capture");
 
     /* ========================== Cook the terminal on panic ========================= */
-    let default_panic: Box<
-        dyn Fn(&std::panic::PanicHookInfo<'_>) + Send + Sync + 'static,
-    > = std::panic::take_hook();
+    let default_panic = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
         /* Atleast try to cook the terminal on error before printing the message.
          * Do not handle the error to prevent possible infinite loops when panicking. */
 
-        let _ = execute!(io::stdout(), DisableMouseCapture);
+        let _ = execute!(io::stdout(), DisableMouseCapturePixels);
         let _ = execute!(io::stdout(), LeaveAlternateScreen);
         let _ = execute!(io::stdout(), Show);
         let _ = disable_raw_mode();
@@ -64,15 +65,15 @@ fn main() {
     }));
 
     /* ============================= STDIN parser thread ============================= */
-    let (key_input, graphics_input, winsize_change) = threads::event::spawn();
-    RECEIVER_GR.get_or_init(|| Mutex::new(graphics_input));
+    let event_inputs = threads::event::spawn();
+    RECEIVER_GR.get_or_init(|| Mutex::new(event_inputs.2));
 
     /* ========== Check if the terminal supports the Kitty graphics protocol ========= */
     terminal_graphics_test_support()
         .expect("Error when testing terminal support of the Kitty graphics protocol");
 
     /* ================================= Load config ================================= */
-    let mut key_matcher: Keybinds<ConfigAction>;
+    let mut key_matcher;
     {
         let mut config = config_load_or_create().expect("Could not load config");
         key_matcher = config.bindings.unwrap();
@@ -81,7 +82,7 @@ fn main() {
     }
 
     /* ======================= Calculate padding for all images ====================== */
-    let winsize_tmp: WindowSize = window_size().expect("Could not get win size");
+    let winsize_tmp = window_size().expect("Could not get win size");
     let winsize = WindowSize {
         rows: winsize_tmp.rows,
         columns: winsize_tmp.columns,
@@ -90,26 +91,26 @@ fn main() {
     };
     TERMINAL_SIZE.get_or_init(|| RwLock::new(winsize_tmp));
 
-    let config: &Config = CONFIG.get().unwrap();
+    let config = CONFIG.get().unwrap();
 
-    let pxpercol: f64 = winsize.width as f64 / winsize.columns as f64;
-    let pxperrow: f64 = winsize.height as f64 / winsize.rows as f64;
+    let pxpercol = winsize.width as f64 / winsize.columns as f64;
+    let pxperrow = winsize.height as f64 / winsize.rows as f64;
 
-    let paddingcol: usize = (pxpercol * config.viewer.render_precision
+    let paddingcol = (pxpercol * config.viewer.render_precision
         / config.viewer.scale_min as f64)
         .ceil() as usize;
-    let paddingrow: usize = (pxperrow * config.viewer.render_precision
+    let paddingrow = (pxperrow * config.viewer.render_precision
         / config.viewer.scale_min as f64)
         .ceil() as usize;
 
     IMAGE_PADDING.get_or_init(|| std::cmp::max(paddingcol, paddingrow));
 
     /* =========== Generate a random ID which is unique for every instance =========== */
-    let random_u64: u64 = RandomState::new().build_hasher().finish();
+    let random_u64 = RandomState::new().build_hasher().finish();
     SOFTWARE_ID.get_or_init(|| format!("{random_u64:X}"));
 
     /* ====================== Viewer - The core of this program ====================== */
-    let file: String = std::env::args().nth(1).expect("No provided pdf!");
+    let file = std::env::args().nth(1).expect("No provided pdf!");
     let (mut viewer, sender_rerender) = Viewer::new();
 
     let (mut renderer, result_receiver) = threads::renderer::Renderer::new();
@@ -119,7 +120,7 @@ fn main() {
         .expect("Cannot send action to renderer thread");
 
     /* ========================= Thread notifying file change ======================== */
-    let file_reload: Receiver<()> =
+    let file_reload =
         threads::fnotify::spawn(&file).expect("Could not init file watcher");
 
     /* ============================== Main program loop ============================== */
@@ -129,15 +130,30 @@ fn main() {
         inverse: SystemTime::now() - Duration::from_millis(500),
     };
 
+    let mut current_mouse = MouseEvent {
+        kind: MouseEventKind::Moved,
+        column: u16::MAX,
+        row: u16::MAX,
+        modifiers: KeyModifiers::NONE,
+    };
+
     'main: loop {
         /* sel[0..1] are the results from the renderer thread */
-        let mut sel = result_receiver.construct_select();
+        let mut sel = result_receiver.construct_biased_select();
         sel.recv(&file_reload);
         sel.recv(&sender_rerender);
-        sel.recv(&key_input);
-        sel.recv(&winsize_change);
+        /* Key event */
+        sel.recv(&event_inputs.0);
+        /* Mouse event */
+        sel.recv(&event_inputs.1);
+        /* Window size change input */
+        sel.recv(&event_inputs.3);
 
         let index_ready = sel.ready();
+
+        execute!(io::stdout(), ClearImages, Clear(ClearType::FromCursorDown))
+            .expect("Could not clear images");
+
         match index_ready {
             0 | 1 => {
                 let result = result_receiver
@@ -148,10 +164,17 @@ fn main() {
                     threads::renderer::RendererResult::PageMetadata {
                         max_page_width,
                         cumulative_heights,
+                        widths,
+                        links,
                     } => {
                         let uninit = viewer.is_uninit();
 
-                        viewer.update_metadata(max_page_width, &cumulative_heights);
+                        viewer.update_metadata(
+                            max_page_width,
+                            &cumulative_heights,
+                            &widths,
+                            &links,
+                        );
                         viewer.invalidate_registry();
                         viewer.center_viewer();
                         if uninit {
@@ -180,7 +203,7 @@ fn main() {
                     .expect("Could not receive rerender");
             }
             4 => {
-                let key = key_input.try_recv().expect("Could not receive key");
+                let key = event_inputs.0.try_recv().expect("Could not receive key");
                 if handle_key(
                     key,
                     &mut key_matcher,
@@ -192,7 +215,12 @@ fn main() {
                 }
             }
             5 => {
-                let (width, height) = winsize_change
+                current_mouse =
+                    event_inputs.1.try_recv().expect("Could not receive mouse");
+            }
+            6 => {
+                let (width, height) = event_inputs
+                    .3
                     .try_recv()
                     .expect("Could not receive from win-size");
 
@@ -207,16 +235,38 @@ fn main() {
             _ => unreachable!(),
         };
 
-        let gr: MutexGuard<Receiver<GraphicsResponse>> =
-            RECEIVER_GR.get().unwrap().lock().unwrap();
+        if let Some(link) = viewer.intersect_link(current_mouse) {
+            execute!(io::stdout(), SetPointerShape(PointerShape::Pointer))
+                .expect("Could not set pointer shape");
 
-        execute!(io::stdout(), ClearImages).expect("Could not clear images");
+            viewer.uri_hint(&link);
+            if current_mouse.kind.is_down() {
+                /* URI points to page in this document */
+                if link.uri.starts_with('#') {
+                    let _ = viewer.jump(link.page as usize);
+                } else {
+                    let _ = open::that_detached(link.uri);
+                }
 
-        let displayed: Vec<usize> = viewer
+                execute!(io::stdout(), SetPointerShape(PointerShape::Default))
+                    .expect("Could not set pointer shape");
+
+                /* Since the mouse position is saved but this loop runs on other triggers
+                 * such as key press, don't allow the mouse to accidentely click on other
+                 * links when the viewer is scrolled down by key presses */
+                current_mouse.kind = MouseEventKind::Moved;
+            }
+        } else {
+            execute!(io::stdout(), SetPointerShape(PointerShape::Default))
+                .expect("Could not set pointer shape");
+        }
+
+        let gr = RECEIVER_GR.get().unwrap().lock().unwrap();
+        let displayed = viewer
             .display_pages(&renderer)
             .expect("Could not display pages");
         for page in displayed {
-            let res: GraphicsResponse = gr.recv().unwrap();
+            let res = gr.recv().unwrap();
             if res.payload().contains("OK") {
                 continue;
             }
@@ -228,7 +278,8 @@ fn main() {
     RUNNING.store(false, Ordering::Release);
 
     /* ========================== Cook the terminal on exit ========================== */
-    execute!(io::stdout(), DisableMouseCapture).expect("Could not disable mouse capture");
+    execute!(io::stdout(), DisableMouseCapturePixels)
+        .expect("Could not disable mouse capture");
     execute!(io::stdout(), LeaveAlternateScreen).expect("Could not leave alt mode");
     execute!(io::stdout(), Show).expect("Could not show cursor");
     disable_raw_mode().expect("Could not uncook the terminal");
@@ -241,7 +292,7 @@ fn handle_key(
     renderer: &threads::renderer::Renderer,
     throttle_data: &mut LastExecuted,
 ) -> bool {
-    let config: &Config = CONFIG.get().unwrap();
+    let config = CONFIG.get().unwrap();
 
     let possible_action = key_matcher.dispatch(KeyInput::from(key));
     if possible_action.is_none() {
@@ -280,7 +331,7 @@ fn handle_key(
     let action = possible_action.unwrap();
 
     /* `true` indicates that the caller should exit *safely* the current process */
-    let res: bool = match action {
+    match action {
         ConfigAction::CenterViewer => {
             viewer.center_viewer();
             false
@@ -290,7 +341,7 @@ fn handle_key(
             false
         }
         ConfigAction::JumpLastPage => {
-            let last_page: usize = viewer.pages() - 1;
+            let last_page = viewer.pages() - 1;
             let _ = viewer.jump(last_page);
             false
         }
@@ -328,6 +379,5 @@ fn handle_key(
             viewer.scale(-config.viewer.scale_amount);
             false
         }
-    };
-    res
+    }
 }
