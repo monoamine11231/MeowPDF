@@ -27,6 +27,7 @@ pub enum RendererResult {
     PageMetadata {
         max_page_width: f32,
         cumulative_heights: Vec<f32>,
+        widths: Vec<f32>,
     },
     Image {
         page: usize,
@@ -75,10 +76,10 @@ impl<'a> RendererInnerState<'a> {
     pub fn load(&mut self) -> Result<RendererResult, String> {
         let mut max_page_width = -f32::INFINITY;
         let mut cumulative_heights = Vec::new();
+        let mut widths = Vec::new();
 
         self.document = Document::open(&self.file)
             .map_err(|x| format!("Could not open the given PDF file: {}", x))?;
-
         if !self.document.is_pdf() {
             Err("The given PDF file is not a PDF!".to_string())?;
         }
@@ -109,11 +110,13 @@ impl<'a> RendererInnerState<'a> {
                     + height
                     + self.config.viewer.margin_bottom,
             );
+            widths.push(width);
         }
 
         Ok(RendererResult::PageMetadata {
             max_page_width,
             cumulative_heights,
+            widths,
         })
     }
 }

@@ -148,10 +148,11 @@ fn main() {
                     threads::renderer::RendererResult::PageMetadata {
                         max_page_width,
                         cumulative_heights,
+                        widths
                     } => {
                         let uninit = viewer.is_uninit();
 
-                        viewer.update_metadata(max_page_width, &cumulative_heights);
+                        viewer.update_metadata(max_page_width, &cumulative_heights, &widths);
                         viewer.invalidate_registry();
                         viewer.center_viewer();
                         if uninit {
