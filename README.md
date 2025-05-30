@@ -30,6 +30,7 @@ There are multiple in-terminal PDF viewers for the Kitty terminal but the main p
 - [Usage](#usage)
   - [Configuration](#configuration)
     - [Keybindings](#keybindings)
+    - [URI Bar](#uri-bar)
 - [TODO](#todo)
 - [Contributions](#contributions)
 - [License](#license)
@@ -40,10 +41,7 @@ There are multiple in-terminal PDF viewers for the Kitty terminal but the main p
 ## Requirements
 - Cargo
 - Rust
-- Kitty >= 0.20.0
-
-> [!NOTE]
-> A Kitty terminal version larger than 0.20.0 is **necessary** for the viewer to work because of the cursor control feature in the protocol ([#3411](https://github.com/kovidgoyal/kitty/issues/3411)).
+- Kitty >= 0.31.0
 
 <div align="right"><kbd><a href="#table-of-contents">↑ Back to top ↑</a></kbd></div>
 <hr/>
@@ -74,6 +72,9 @@ One of the key-features of *MeowPDF* is it's high customizability. *MeowPDF* all
 - Margin amount on the bottom of PDF pages
 - Preloaded pages before and after the first displayed page
 - Keybindings
+- URI annotation bar
+
+The configuration TOML file is found in `~/.config/meowpdf`.
 
 #### Keybindings
 The default keybindings are listed bellow:
@@ -90,13 +91,32 @@ The default keybindings are listed bellow:
 - **+**: Zoom in
 - **-**: Zoom out
 
-The keybindings can be customized by modifying the `[bindings]` section in the configuration file. The syntax for expressing key combinations is the same as of [keybinds-rs](https://github.com/rhysd/keybinds-rs/blob/main/doc/binding_syntax.md).
+The keybindings can be customized by modifying the `[bindings]` section in the configuration file. The syntax for expressing key combinations is the same as of [keybinds-rs](https://github.com/rhysd/keybinds-rs/blob/main/doc/binding_syntax.md). The actions that keys can be bound to are the following:
+- `ToggleAlpha`: Toggles the alpha color mode.
+- `ToggleInverse`: Toggles the inverse color mode.
+- `CenterViewer`: Centers the viewer.
+- `ZoomIn`: Zooms in the viewer.
+- `ZoomOut`: Zooms out the viewer.
+- `JumpFirstPage`: Jumps to the first page of the document.
+- `JumpLastPage`: Jumps to the last page of the document.
+- `Quit`: Quits the document.
 
 > [!WARNING]
 > Be aware that character keys such as `a`, `b`, ... can not be combined with the Shift modifier explicitely. Capitalize the characters instead.
 
+#### URI Bar
+The URI annotation bar shows up when hovering a mouse event hovers a link in the PDF document. That bar displays the path of the hovered link.
 
-The configuration TOML file is found in `~/.config/meowpdf`.
+The URI bar can be customized by modifying the `[viewer.uri_hint]` section in the configuration file. The following parameters can be set and modified:
+- `enabled` (`true/false`): Enables the URI annotation bar.
+- `background` (`string`): Sets the background color of the URI annotation bar.
+- `foreground` (`string`): Sets the foreground color of the URI annotation bar.
+- `width` (`f32`): Sets the maximum width of the bar as a factor based off the current terminal size.
+
+The allowed color strings are listed [here](https://docs.rs/crossterm/latest/src/crossterm/style/types/color.rs.html#221-259).
+
+> [!NOTE]
+> The minimal URI bar width is currently 5 column cells.
 
 <div align="right"><kbd><a href="#table-of-contents">↑ Back to top ↑</a></kbd></div>
 <hr/>
