@@ -40,15 +40,18 @@ There are multiple in-terminal PDF viewers for the Kitty terminal but the main p
 <hr/>
 
 ## Features
-- Viewer control using mouse/touchpad/keyboard
+- Control using mouse/touchpad/keyboard
 - Toggling of alpha and/or inverse color modes
-- Responsive clicking and link hovering
+- Mouse clicking and link hovering
 - Customization of keybindings
 - URI path annotation bar
 - Multi-threaded
 - Cross-platform 
 - ..
 - General high customizability
+
+<div align="right"><kbd><a href="#table-of-contents">↑ Back to top ↑</a></kbd></div>
+<hr>
 
 ## Requirements
 - Cargo
