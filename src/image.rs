@@ -1,14 +1,9 @@
-use std::sync::{
-    atomic::{AtomicUsize, Ordering},
-    RwLockReadGuard,
-};
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use crate::{
-    drivers::graphics::*, viewer::DisplayRect, Config, CONFIG, IMAGE_PADDING,
-    TERMINAL_SIZE,
+    drivers::graphics::*, viewer::DisplayRect, CONFIG, IMAGE_PADDING, TERMINAL_SIZE,
 };
 
-use crossterm::terminal::WindowSize;
 use mupdf::Pixmap;
 
 pub struct Image {
@@ -23,9 +18,9 @@ impl Image {
         static ID: AtomicUsize = AtomicUsize::new(1);
 
         const PADDING_CLR: u8 = 0u8;
-        let padding: usize = *IMAGE_PADDING.get().unwrap();
+        let padding = *IMAGE_PADDING.get().unwrap();
 
-        let mut data: Vec<u8> = Vec::with_capacity(
+        let mut data = Vec::with_capacity(
             (2 * padding + pixmap.width() as usize) * padding * 8
                 + padding * 8
                 + (pixmap.samples().len() / 3) * 4,
@@ -61,7 +56,7 @@ impl Image {
             (2 * padding + pixmap.width() as usize) * padding * 4,
         ));
 
-        let image: Image = Self {
+        let image = Self {
             id: ID.load(Ordering::Acquire),
             dimensions: (pixmap.width() as i32, pixmap.height() as i32),
             data,
@@ -94,21 +89,20 @@ impl Image {
         /* `true` indicates that the image was actually displayed and was not
          * tried to be displayed outside of the viewpoint */
 
-        let config: &Config = CONFIG.get().unwrap();
-        let padding: usize = *IMAGE_PADDING.get().unwrap();
+        let config = CONFIG.get().unwrap();
+        let padding = *IMAGE_PADDING.get().unwrap();
         let render_precision = config.viewer.render_precision;
 
         let scale = rect.height as f64 / (self.dimensions.1 as f64 / render_precision);
         let render_precision_norm = render_precision / scale;
 
-        let (pxpercol, pxperrow): (f64, f64);
-        let (col0, col1, row0, row1): (f64, f64, f64, f64);
-        let (padding_top, padding_bottom): (f64, f64);
-        let (padding_left, padding_right): (f64, f64);
-        let (cropx, cropy, cropw, croph): (usize, usize, usize, usize);
+        let (pxpercol, pxperrow);
+        let (col0, col1, row0, row1);
+        let (padding_top, padding_bottom);
+        let (padding_left, padding_right);
+        let (cropx, cropy, cropw, croph);
 
-        let terminal_size: RwLockReadGuard<WindowSize> =
-            TERMINAL_SIZE.get().unwrap().read().unwrap();
+        let terminal_size = TERMINAL_SIZE.get().unwrap().read().unwrap();
 
         pxpercol = terminal_size.width as f64 / terminal_size.columns as f64;
         pxperrow = terminal_size.height as f64 / terminal_size.rows as f64;
@@ -175,7 +169,7 @@ impl Image {
     }
 
     pub fn transfer(&self) -> Result<(), String> {
-        let padding: usize = *IMAGE_PADDING.get().unwrap();
+        let padding = *IMAGE_PADDING.get().unwrap();
 
         terminal_graphics_transfer_bitmap(
             self.id,

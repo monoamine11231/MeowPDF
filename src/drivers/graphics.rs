@@ -2,8 +2,7 @@ use base64::{engine::general_purpose::STANDARD, Engine};
 use std::{
     collections::HashMap,
     fs::File,
-    io::{stdout, StdoutLock, Write},
-    path::PathBuf,
+    io::{stdout, Write},
     time::Duration,
 };
 
@@ -12,7 +11,7 @@ use crate::{RECEIVER_GR, SOFTWARE_ID};
 /* Should be executed only after uncooking the terminal. This method expects the
  * terminal that a non-blocking and unbuffered read from stdin is possible */
 pub fn terminal_graphics_test_support() -> Result<(), String> {
-    let mut handle1: StdoutLock = stdout().lock();
+    let mut handle1 = stdout().lock();
     handle1
         .write_all(b"\x1B_Gi=31,s=1,v=1,a=q,t=d,f=24;AAAA\x1B\\")
         .unwrap();
@@ -41,7 +40,7 @@ pub fn terminal_graphics_test_support() -> Result<(), String> {
 
 #[allow(dead_code)]
 pub fn terminal_graphics_deallocate_id(id: usize) -> Result<(), String> {
-    let mut handle: StdoutLock = stdout().lock();
+    let mut handle = stdout().lock();
     write!(handle, "\x1B_Ga=d,d=I,i={};\x1B\\", id).unwrap();
 
     handle.flush().unwrap();
@@ -56,8 +55,8 @@ pub fn terminal_graphics_transfer_bitmap(
     data: &[u8],
     alpha: bool,
 ) -> Result<(), String> {
-    let mut handle: StdoutLock = stdout().lock();
-    let mut tmp_file_path: PathBuf = std::env::temp_dir();
+    let mut handle = stdout().lock();
+    let mut tmp_file_path = std::env::temp_dir();
 
     tmp_file_path.push(format!(
         "tty-graphics-protocol-{}-{}",
@@ -71,7 +70,7 @@ pub fn terminal_graphics_transfer_bitmap(
     while tmp_file_path.as_path().exists() {}
 
     {
-        let mut tmp_file: File = File::create(tmp_file_path.as_path()).unwrap();
+        let mut tmp_file = File::create(tmp_file_path.as_path()).unwrap();
         tmp_file.write_all(data).unwrap();
     }
 
@@ -102,7 +101,7 @@ pub fn terminal_graphics_display_image(
     c: usize,
     r: usize,
 ) -> Result<(), String> {
-    let mut handle: StdoutLock = stdout().lock();
+    let mut handle = stdout().lock();
 
     write!(handle, "\x1B[s\x1B[{};{}H", row, col).unwrap();
 
@@ -135,7 +134,7 @@ pub struct GraphicsResponse {
 
 impl GraphicsResponse {
     pub fn new(source: &[u8]) -> Self {
-        let source: &str = std::str::from_utf8(source).unwrap();
+        let source = std::str::from_utf8(source).unwrap();
         let spl: Vec<&str> = source.split(';').collect();
 
         Self {

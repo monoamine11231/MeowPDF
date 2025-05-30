@@ -1,14 +1,14 @@
 use core::f32;
 use std::{
     collections::{HashMap, VecDeque},
-    sync::{Arc, RwLock, RwLockReadGuard},
+    sync::{Arc, RwLock},
 };
 
 use crossbeam_channel::{unbounded, Receiver, Sender};
-use crossterm::{event::MouseEvent, terminal::WindowSize};
+use crossterm::event::MouseEvent;
 use mupdf::Link;
 
-use crate::{threads::renderer::*, Config, Image, CONFIG, TERMINAL_SIZE};
+use crate::{threads::renderer::*, Image, CONFIG, TERMINAL_SIZE};
 
 #[derive(Clone, Copy, Debug)]
 pub struct DisplayRect {
@@ -67,19 +67,19 @@ impl Point for (i32, i32) {
 
 impl Rect for DisplayRect {
     fn x(&self) -> i32 {
-        self.x as i32
+        self.x
     }
 
     fn y(&self) -> i32 {
-        self.y as i32
+        self.y
     }
 
     fn width(&self) -> i32 {
-        self.width as i32
+        self.width
     }
 
     fn height(&self) -> i32 {
-        self.height as i32
+        self.height
     }
 }
 
@@ -225,22 +225,19 @@ impl Viewer {
     /* ============================= Calculation methods ============================= */
     fn offset2page(&self, offset: f32) -> usize {
         /* Update page index by performing binary search */
-        let res: Result<usize, usize> =
-            self.cumulative_heights.binary_search_by(|x: &f32| {
-                x.partial_cmp(&offset)
-                    .expect("NaN value found in cumulative height vector")
-            });
+        let res = self.cumulative_heights.binary_search_by(|x: &f32| {
+            x.partial_cmp(&offset)
+                .expect("NaN value found in cumulative height vector")
+        });
 
-        let index: usize = match res {
+        match res {
             Ok(x) => x,
             Err(x) => x,
-        };
-
-        index
+        }
     }
 
     pub fn bound_viewer(&mut self) {
-        let config: &Config = CONFIG.get().unwrap();
+        let config = CONFIG.get().unwrap();
 
         let terminal_size_lock = TERMINAL_SIZE.get().unwrap().read().unwrap();
 
@@ -259,7 +256,7 @@ impl Viewer {
                 terminal_size_lock.width as f32 - self.max_width * self.scale,
             ),
         );
-        let max_yoffset: f32 = f32::max(
+        let max_yoffset = f32::max(
             -10.0f32,
             self.cumulative_heights.last().unwrap_or(&0.0f32)
                 - terminal_size_lock.height as f32 / self.scale,
@@ -271,7 +268,7 @@ impl Viewer {
         self.page_view = self.offset2page(
             self.offset.1 + terminal_size_lock.height as f32 * 0.5 / self.scale,
         );
-        let mut min_page: usize = 0;
+        let mut min_page = 0;
         if !self.cumulative_heights.is_empty() {
             min_page = self.cumulative_heights.len() - 1;
         }
@@ -287,15 +284,14 @@ impl Viewer {
     }
 
     pub fn center_viewer(&mut self) {
-        let terminal_size_lock: RwLockReadGuard<WindowSize> =
-            TERMINAL_SIZE.get().unwrap().read().unwrap();
+        let terminal_size_lock = TERMINAL_SIZE.get().unwrap().read().unwrap();
 
         self.offset.0 =
             terminal_size_lock.width as f32 * 0.5 - self.max_width * self.scale * 0.5;
     }
 
     pub fn page_height(&self, page: usize) -> Result<f32, String> {
-        let page_prev_height: f32 = if page > 0 {
+        let page_prev_height = if page > 0 {
             *self.cumulative_heights.get(page - 1).unwrap_or(&0.0f32)
         } else {
             0.0f32
@@ -318,16 +314,15 @@ impl Viewer {
 
     fn calculate_display_bounds(&self) -> Vec<(usize, DisplayRect)> {
         /* Calculated bounds to display the pages in the temrinal */
-        let mut bounds: Vec<(usize, DisplayRect)> = Vec::new();
+        let mut bounds = Vec::new();
         /* Current terminal height */
-        let terminal_height: f32 =
-            TERMINAL_SIZE.get().unwrap().read().unwrap().height as f32;
+        let terminal_height = TERMINAL_SIZE.get().unwrap().read().unwrap().height as f32;
         /* Bottom margin */
         let margin_bottom = CONFIG.get().unwrap().viewer.margin_bottom;
         /* Number of pages */
-        let pages_num: usize = self.cumulative_heights.len();
+        let pages_num = self.cumulative_heights.len();
         /* The index of the first rendered page */
-        let mut page_index: usize = self.page_first();
+        let mut page_index = self.page_first();
 
         if pages_num <= page_index {
             return bounds;
@@ -339,7 +334,7 @@ impl Viewer {
         } else {
             self.cumulative_heights[page_index - 1]
         };
-        let mut displayed_offset: f32 = -page_offset * self.scale;
+        let mut displayed_offset = -page_offset * self.scale;
 
         /* Cumulative displayed page height */
         while displayed_offset < terminal_height && page_index < pages_num {
@@ -381,28 +376,23 @@ impl Viewer {
             }
         }
 
-        if intersected_page.is_none() {
-            return None;
-        }
+        intersected_page?;
 
         let page_point = (
-            ((mouse.column as i32 - intersected_rect.unwrap().x as i32) as f32
-                / self.scale) as i32,
-            ((mouse.row as i32 - intersected_rect.unwrap().y as i32) as f32 / self.scale)
+            ((mouse.column as i32 - intersected_rect.unwrap().x) as f32 / self.scale)
                 as i32,
+            ((mouse.row as i32 - intersected_rect.unwrap().y) as f32 / self.scale) as i32,
         );
         let mut intersected_link = None;
         let links = &self.links[intersected_page.unwrap()];
-        for link in links.into_iter() {
+        for link in links.iter() {
             if rect_point_intersect(&link.bounds, &page_point) {
                 intersected_link = Some(link);
                 break;
             }
         }
 
-        if intersected_link.is_none() {
-            return None;
-        }
+        intersected_link?;
 
         Some(intersected_link.unwrap().clone())
     }
@@ -416,7 +406,7 @@ impl Viewer {
             };
         }
 
-        let config: &Config = CONFIG.get().unwrap();
+        let config = CONFIG.get().unwrap();
 
         if image.is_none() {
             remove_image!(page);
@@ -427,7 +417,7 @@ impl Viewer {
             remove_image!(page);
         }
 
-        let image_unwrapped: Arc<RwLock<Image>> = image.unwrap();
+        let image_unwrapped = image.unwrap();
         self.memory_used += image_unwrapped.read().unwrap().size();
         self.last_rendered.push_back(page);
 
@@ -435,7 +425,7 @@ impl Viewer {
         self.scheduled4render.remove(&page);
 
         while self.memory_used >= config.viewer.memory_limit {
-            let page2remove: usize = self.last_rendered.pop_front().unwrap();
+            let page2remove = self.last_rendered.pop_front().unwrap();
             if !self.images.contains_key(&page2remove) {
                 continue;
             }
@@ -481,12 +471,12 @@ impl Viewer {
     /* Displays the pages based on the internal state of the offset.
      * Calculates how many pages should be rendered based on the terminal size */
     pub fn display_pages(&mut self, renderer: &Renderer) -> Result<Vec<usize>, String> {
-        let config: &Config = CONFIG.get().unwrap();
+        let config = CONFIG.get().unwrap();
         let preloaded = config.viewer.pages_preloaded;
 
         /* Track what images have been actually displayed on the screen to
          * later check if there occured errors during the display */
-        let mut displayed: Vec<usize> = Vec::new();
+        let mut displayed = Vec::new();
         let none_rect = DisplayRect {
             x: 0,
             y: 0,
@@ -495,7 +485,7 @@ impl Viewer {
         };
 
         /* The index of the first rendered page */
-        let mut page_index: usize = self.page_first();
+        let mut page_index = self.page_first();
         if self.cumulative_heights.len() <= page_index {
             return Ok(displayed);
         }
@@ -529,7 +519,7 @@ impl Viewer {
     }
 
     pub fn schedule_transfer(&mut self, page: usize) {
-        let image: Arc<RwLock<Image>> = self.images[&page].clone();
+        let image = self.images[&page].clone();
         let _ = image.read().unwrap().transfer();
         let _ = self.sender_rerender.send(());
     }
