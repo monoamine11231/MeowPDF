@@ -1,3 +1,19 @@
+## [1.2.0] - 2025-05-30
+
+### Added
+
+- Link clicking and hovering.
+- URI annotation bar showing the hovered link path.
+- Better documentation on the customization of different components.
+
+### Removed
+
+- Type hints from the code base.
+
+### Changed
+
+- The messy display method by now using display rectangular boundaries.
+
 ## [1.1.0] - 2025-05-28
 
 ### Added
