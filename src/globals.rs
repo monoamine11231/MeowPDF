@@ -3,6 +3,17 @@ use crossbeam_channel::Receiver;
 use crossterm::terminal::WindowSize;
 use std::sync::{atomic::AtomicBool, Mutex, OnceLock, RwLock};
 
+pub const HELP_MSG: &str = r#"meowpdf kitty terminal document viewer
+
+Usage: meowpdf <file>
+
+Global options:
+-h, --help          Print this usage information.
+-v, --version       Print the current version.
+"#;
+
+pub const VERSION: &str = "1.2.1";
+pub const RELEASED: &str = "2025-06-10";
 pub const CONFIG_FILENAME: &str = "meowpdf";
 pub const DEFAULT_CONFIG: &str = r#"
 [viewer]
@@ -22,6 +33,8 @@ scale_amount = 0.5
 margin_bottom = 10.0
 # Determines the amount of pages that are preloaded in advance 
 pages_preloaded = 3
+# Inverse vertical scroll
+inverse_scroll = false
 
 [viewer.uri_hint]
 # Enabled URI hints
@@ -34,12 +47,17 @@ foreground = "white"
 width = 0.2 
 
 [bindings]
-"a" = "ToggleAlpha"
-"A" = "ToggleAlpha"
-"i" = "ToggleInverse"
-"I" = "ToggleInverse"
-"c" = "CenterViewer"
+"Ctrl+a" = "ToggleAlpha"
+"Ctrl+o" = "ToggleInverse"
 "C" = "CenterViewer"
+"h" = "MoveLeft"
+"j" = "MoveDown"
+"k" = "MoveUp"
+"l" = "MoveRight"
+"Up" = "MoveUp"
+"Left" = "MoveLeft"
+"Right" = "MoveRight"
+"Down" = "MoveDown"
 "Plus" = "ZoomIn"
 "-" = "ZoomOut"
 "g g" = "JumpFirstPage"
