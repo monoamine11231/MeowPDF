@@ -1,7 +1,7 @@
 mod drivers;
 use crate::drivers::commands::ClearImages;
 use crossterm::cursor::{Hide, Show};
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
+use crossterm::event::{KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
 use crossterm::execute;
 use crossterm::terminal::{
     disable_raw_mode, enable_raw_mode, window_size, Clear, ClearType,
@@ -43,6 +43,20 @@ struct LastExecuted {
 }
 
 fn main() {
+    /* ============================= Check the argument ============================= */
+    let arg = std::env::args().nth(1).unwrap_or("".to_owned());
+    match arg.as_str() {
+        "-h" | "--help" | "" => {
+            println!("{}", HELP_MSG);
+            return;
+        }
+        "-v" | "--version" => {
+            println!("meowpdf v{} ({})", VERSION, RELEASED);
+            return;
+        }
+        _ => (),
+    }
+
     /* ============================= Uncook the terminal ============================= */
     enable_raw_mode().expect("Could not cook the terminal");
     execute!(io::stdout(), EnterAlternateScreen).expect("Could not enter alt mode");
@@ -110,18 +124,16 @@ fn main() {
     SOFTWARE_ID.get_or_init(|| format!("{random_u64:X}"));
 
     /* ====================== Viewer - The core of this program ====================== */
-    let file = std::env::args().nth(1).expect("No provided pdf!");
     let (mut viewer, sender_rerender) = Viewer::new();
 
     let (mut renderer, result_receiver) = threads::renderer::Renderer::new();
-    renderer.run(&file).expect("Couldn't start renderer thread");
+    renderer.run(&arg).expect("Couldn't start renderer thread");
     renderer
         .send_and_confirm_action(threads::renderer::RendererAction::Load)
         .expect("Cannot send action to renderer thread");
 
     /* ========================= Thread notifying file change ======================== */
-    let file_reload =
-        threads::fnotify::spawn(&file).expect("Could not init file watcher");
+    let file_reload = threads::fnotify::spawn(&arg).expect("Could not init file watcher");
 
     /* ============================== Main program loop ============================== */
     let mut throttle_data = LastExecuted {
@@ -296,42 +308,35 @@ fn handle_key(
 
     let possible_action = key_matcher.dispatch(KeyInput::from(key));
     if possible_action.is_none() {
-        return match key {
-            KeyEvent {
-                code: KeyCode::Up, ..
-            } => {
-                viewer.scroll((0.0f32, config.viewer.scroll_speed));
-                false
-            }
-            KeyEvent {
-                code: KeyCode::Down,
-                ..
-            } => {
-                viewer.scroll((0.0f32, -config.viewer.scroll_speed));
-                false
-            }
-            KeyEvent {
-                code: KeyCode::Left,
-                ..
-            } => {
-                viewer.scroll((-config.viewer.scroll_speed, 0.0f32));
-                false
-            }
-            KeyEvent {
-                code: KeyCode::Right,
-                ..
-            } => {
-                viewer.scroll((config.viewer.scroll_speed, 0.0f32));
-                false
-            }
-            _ => false,
-        };
+        return false;
     }
 
     let action = possible_action.unwrap();
 
+    let inverse_factor = if config.viewer.inverse_scroll {
+        1.0
+    } else {
+        -1.0
+    };
+
     /* `true` indicates that the caller should exit *safely* the current process */
     match action {
+        ConfigAction::MoveUp => {
+            viewer.scroll((0.0f32, inverse_factor * config.viewer.scroll_speed));
+            false
+        }
+        ConfigAction::MoveDown => {
+            viewer.scroll((0.0f32, -inverse_factor * config.viewer.scroll_speed));
+            false
+        }
+        ConfigAction::MoveLeft => {
+            viewer.scroll((-config.viewer.scroll_speed, 0.0f32));
+            false
+        }
+        ConfigAction::MoveRight => {
+            viewer.scroll((config.viewer.scroll_speed, 0.0f32));
+            false
+        }
         ConfigAction::CenterViewer => {
             viewer.center_viewer();
             false

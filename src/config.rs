@@ -25,6 +25,7 @@ pub struct ConfigViewer {
     pub scale_amount: f32,
     pub margin_bottom: f32,
     pub pages_preloaded: usize,
+    pub inverse_scroll: bool,
 
     pub uri_hint: ConfigViewerUriHint,
 }
@@ -42,6 +43,10 @@ pub enum ConfigAction {
     ToggleAlpha,
     ToggleInverse,
     CenterViewer,
+    MoveUp,
+    MoveDown,
+    MoveLeft,
+    MoveRight,
     ZoomIn,
     ZoomOut,
     JumpFirstPage,
