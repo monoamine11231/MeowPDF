@@ -1,3 +1,15 @@
+## [1.2.1] - 2025-06-10
+
+### Added
+
+- Basic CLI commands such as help + version [#7](https://github.com/monoamine11231/MeowPDF/issues/7).
+- `hjkl` keybindings for cursor control [#7](https://github.com/monoamine11231/MeowPDF/issues/7).
+- Vertical scroll inversion configuration key.
+
+### Changed
+
+- Vertical scrolling has been made non-inverse by default.
+
 ## [1.2.0] - 2025-05-30
 
 ### Added

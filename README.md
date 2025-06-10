@@ -7,8 +7,8 @@
 
 *A Kitty terminal PDF viewer with Vim-like keybindings and classical GUI-like usage.*
 
-[![Latest release](https://img.shields.io/github/v/release/monoamine11231/meowpdf?label=Latest%20release&style=social)](https://github.com/monoamine11231/meowpdf/releases/tag/v1.2.0)
-[![GitHub commits](https://img.shields.io/github/commits-since/monoamine11231/meowpdf/v1.2.0.svg?style=social)](https://GitHub.com/monoamine11231/meowpdf/commit/)
+[![Latest release](https://img.shields.io/github/v/release/monoamine11231/meowpdf?label=Latest%20release&style=social)](https://github.com/monoamine11231/meowpdf/releases/tag/v1.2.1)
+[![GitHub commits](https://img.shields.io/github/commits-since/monoamine11231/meowpdf/v1.2.1.svg?style=social)](https://GitHub.com/monoamine11231/meowpdf/commit/)
 [![Stars](https://img.shields.io/github/stars/monoamine11231/meowpdf?style=social)](https://github.com/monoamine11231/meowpdf/stargazers)
 [![Fork](https://img.shields.io/github/forks/monoamine11231/meowpdf?style=social)](https://github.com/monoamine11231/meowpdf/network/members)
 [![Watchers](https://img.shields.io/github/watchers/monoamine11231/meowpdf?style=social)](https://github.com/monoamine11231/meowpdf/watchers)
@@ -89,6 +89,7 @@ One of the key-features of *MeowPDF* is it's high customizability. *MeowPDF* all
 - Zoom amount
 - Margin amount on the bottom of PDF pages
 - Preloaded pages before and after the first displayed page
+- Vertical scroll inversion
 - Keybindings
 - URI annotation bar
 
@@ -97,15 +98,15 @@ The configuration TOML file is found in `~/.config/meowpdf`.
 #### Keybindings
 The default keybindings are listed bellow:
 - **q/Q**: Quit
-- **a/A**: Toggles alpha on PDF pages (Makes white background of PDF pages transparent)
-- **i/I**: Toggles color inversion on PDF pages
-- **c/C**: Center the viewer
+- **Ctrl+a**: Toggles alpha on PDF pages (Makes white background of PDF pages transparent)
+- **Ctrl+o**: Toggles color inversion on PDF pages
+- **C**: Center the viewer
 - **gg**: Jumps to the first page of the PDF document
 - **G**: Jumps to the last page of the PDF document
-- **\<left\>**: Move the document to the left
-- **\<right\>**: Move the document to the right
-- **\<up\>**: Move the pages up (& the document down)
-- **\<down\>**: Move the pages down (& the document up)
+- **h/\<left\>**: Move the document left
+- **j/\<down\>**: Move the document down
+- **k/\<up\>**: Move the document up
+- **l/\<right\>**: Move the document right
 - **+**: Zoom in
 - **-**: Zoom out
 
@@ -113,6 +114,10 @@ The keybindings can be customized by modifying the `[bindings]` section in the c
 - `ToggleAlpha`: Toggles the alpha color mode.
 - `ToggleInverse`: Toggles the inverse color mode.
 - `CenterViewer`: Centers the viewer.
+- `MoveUp`: Moves the viewer up.
+- `MoveLeft`: Moves the viewer left.
+- `MoveRight`: Moves the viewer right.
+- `MoveDown`: Moves the viewer down.
 - `ZoomIn`: Zooms in the viewer.
 - `ZoomOut`: Zooms out the viewer.
 - `JumpFirstPage`: Jumps to the first page of the document.
