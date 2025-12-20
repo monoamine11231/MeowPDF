@@ -337,6 +337,21 @@ fn handle_key(
             viewer.scroll((config.viewer.scroll_speed, 0.0f32));
             false
         }
+        ConfigAction::PrevPage => {
+            let current_page = viewer.page_first();
+            if current_page > 0 {
+                let _ = viewer.jump(current_page - 1);
+            }
+            false
+        }
+        ConfigAction::NextPage => {
+            let current_page = viewer.page_first();
+            let last_page = viewer.pages() - 1;
+            if current_page < last_page {
+                let _ = viewer.jump(current_page + 1);
+            }
+            false
+        }
         ConfigAction::CenterViewer => {
             viewer.center_viewer();
             false

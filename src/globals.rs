@@ -62,6 +62,10 @@ width = 0.2
 "-" = "ZoomOut"
 "g g" = "JumpFirstPage"
 "G" = "JumpLastPage"
+"PageUp" = "PrevPage"
+"PageDown" = "NextPage"
+"Ctrl+b" = "PrevPage"
+"Ctrl+f" = "NextPage"
 "q" = "Quit"
 "Q" = "Quit"
 "#;
