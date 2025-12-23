@@ -198,7 +198,7 @@ impl Viewer {
         if page == 0 {
             self.offset.1 = 0.0f32;
         } else {
-            self.offset.1 = self.cumulative_heights[self.page_first - 1];
+            self.offset.1 = self.cumulative_heights[self.page_first - 1] + 1.0;
         }
         self.bound_viewer();
 

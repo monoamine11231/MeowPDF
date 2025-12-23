@@ -51,6 +51,8 @@ pub enum ConfigAction {
     ZoomOut,
     JumpFirstPage,
     JumpLastPage,
+    PrevPage,
+    NextPage,
     Quit,
 }
 
