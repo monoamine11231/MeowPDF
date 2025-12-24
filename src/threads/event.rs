@@ -2,8 +2,8 @@ use std::{sync::atomic::Ordering, thread};
 
 use crossbeam_channel::{unbounded, Receiver};
 use crossterm::event::{
-    read, Event, KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers, MouseEvent,
-    MouseEventKind,
+    read, Event, KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers,
+    MouseEvent, MouseEventKind,
 };
 
 use crate::{drivers::graphics::GraphicsResponse, globals::RUNNING};
@@ -41,7 +41,11 @@ pub fn spawn() -> EventThreadData {
                 }
                 Event::Mouse(event) => match event {
                     MouseEvent {
-                        kind: kind @ (MouseEventKind::ScrollUp | MouseEventKind::ScrollDown | MouseEventKind::ScrollLeft | MouseEventKind::ScrollRight),
+                        kind:
+                            kind @ (MouseEventKind::ScrollUp
+                            | MouseEventKind::ScrollDown
+                            | MouseEventKind::ScrollLeft
+                            | MouseEventKind::ScrollRight),
                         modifiers,
                         ..
                     } => {
