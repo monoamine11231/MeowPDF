@@ -14,6 +14,7 @@ use drivers::graphics::terminal_graphics_test_support;
 use keybinds::{KeyInput, Keybinds};
 
 mod threads;
+use threads::event::InputEvent;
 
 mod image;
 use crate::image::*;
@@ -215,15 +216,24 @@ fn main() {
                     .expect("Could not receive rerender");
             }
             4 => {
-                let key = event_inputs.0.try_recv().expect("Could not receive key");
-                if handle_key(
-                    key,
-                    &mut key_matcher,
-                    &mut viewer,
-                    &renderer,
-                    &mut throttle_data,
-                ) {
-                    break 'main;
+                let input = event_inputs.0.try_recv().expect("Could not receive input");
+                match input {
+                    InputEvent::Key(key) => {
+                        if handle_key(
+                            key,
+                            &mut key_matcher,
+                            &mut viewer,
+                            &renderer,
+                            &mut throttle_data,
+                        ) {
+                            break 'main;
+                        }
+                    }
+                    InputEvent::MouseScroll(kind, _modifiers) => {
+                        if handle_mouse_scroll(kind, &mut viewer) {
+                            break 'main;
+                        }
+                    }
                 }
             }
             5 => {
@@ -297,6 +307,36 @@ fn main() {
     disable_raw_mode().expect("Could not uncook the terminal");
 }
 
+fn handle_mouse_scroll(kind: MouseEventKind, viewer: &mut Viewer) -> bool {
+    let config = CONFIG.get().unwrap();
+
+    let inverse_factor = if config.viewer.inverse_scroll {
+        1.0
+    } else {
+        -1.0
+    };
+
+    match kind {
+        MouseEventKind::ScrollUp => {
+            viewer.scroll((0.0f32, inverse_factor * config.viewer.scroll_speed));
+            false
+        }
+        MouseEventKind::ScrollDown => {
+            viewer.scroll((0.0f32, -inverse_factor * config.viewer.scroll_speed));
+            false
+        }
+        MouseEventKind::ScrollLeft => {
+            viewer.scroll((-config.viewer.scroll_speed, 0.0f32));
+            false
+        }
+        MouseEventKind::ScrollRight => {
+            viewer.scroll((config.viewer.scroll_speed, 0.0f32));
+            false
+        }
+        _ => false,
+    }
+}
+
 fn handle_key(
     key: KeyEvent,
     key_matcher: &mut Keybinds<ConfigAction>,
@@ -313,20 +353,14 @@ fn handle_key(
 
     let action = possible_action.unwrap();
 
-    let inverse_factor = if config.viewer.inverse_scroll {
-        1.0
-    } else {
-        -1.0
-    };
-
     /* `true` indicates that the caller should exit *safely* the current process */
     match action {
         ConfigAction::MoveUp => {
-            viewer.scroll((0.0f32, inverse_factor * config.viewer.scroll_speed));
+            viewer.scroll((0.0f32, -config.viewer.scroll_speed));
             false
         }
         ConfigAction::MoveDown => {
-            viewer.scroll((0.0f32, -inverse_factor * config.viewer.scroll_speed));
+            viewer.scroll((0.0f32, config.viewer.scroll_speed));
             false
         }
         ConfigAction::MoveLeft => {
