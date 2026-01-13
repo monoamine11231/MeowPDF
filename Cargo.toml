@@ -1,7 +1,7 @@
 [package]
 name = "meowpdf"
 edition = "2021"
-version = "0.1.0"
+version = "1.2.2"
 
 [dependencies]
 base64 = "0.22.1"
@@ -9,7 +9,7 @@ dirs = "5.0.1"
 mupdf = { default-features = false, version = "0.5" }
 notify = { version = "6.1.1" }
 serde = { version = "1.0.219", features = ["derive"] }
-toml = { features = ["parse"], default-features = false, version = "0.8.22" }
+toml = { features = ["parse", "display"], default-features = false, version = "0.8.22" }
 crossterm = { version = "0.29", features = ["serde"] }
 keybinds = { version = "0.2", features = ["crossterm", "serde"] }
 open = "5.3.2"

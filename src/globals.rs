@@ -12,8 +12,8 @@ Global options:
 -v, --version       Print the current version.
 "#;
 
-pub const VERSION: &str = "1.2.1";
-pub const RELEASED: &str = "2025-06-10";
+pub const VERSION: &str = "1.2.2";
+pub const RELEASED: &str = "2026-01-13";
 pub const CONFIG_FILENAME: &str = "meowpdf";
 pub const DEFAULT_CONFIG: &str = r#"
 [viewer]
