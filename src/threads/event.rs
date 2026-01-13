@@ -1,10 +1,7 @@
 use std::{sync::atomic::Ordering, thread};
 
 use crossbeam_channel::{unbounded, Receiver};
-use crossterm::event::{
-    read, Event, KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers,
-    MouseEvent, MouseEventKind,
-};
+use crossterm::event::{read, Event, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
 
 use crate::{drivers::graphics::GraphicsResponse, globals::RUNNING};
 
