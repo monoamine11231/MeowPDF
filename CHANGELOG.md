@@ -2,12 +2,12 @@
 
 ### Added
 
-- Next and previous page jump commands with corresponding keybindings (@PhilT).
+- Next and previous page jump commands with corresponding keybindings ([@PhilT](https://github.com/PhilT)).
 - Auto-fix of the config file when new keybindings are implemented ([#9](https://github.com/monoamine11231/MeowPDF/issues/9)).
 
 ### Fixed
 
-- Inverting scroll direction now applies on mouse scroll wheel only and not on keys (@PhilT).
+- Inverting scroll direction now applies on mouse scroll wheel only and not on keys ([@PhilT](https://github.com/PhilT)).
 
 ## [1.2.1] - 2025-06-10
 
