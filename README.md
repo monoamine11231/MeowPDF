@@ -107,6 +107,8 @@ The default keybindings are listed bellow:
 - **j/\<down\>**: Move the document down
 - **k/\<up\>**: Move the document up
 - **l/\<right\>**: Move the document right
+- **Ctrl+b/\<PageUp\>**: Jumps to the previous page
+- **Ctrl+f/\<PageDown\>**: Jumps to the next page
 - **+**: Zoom in
 - **-**: Zoom out
 
