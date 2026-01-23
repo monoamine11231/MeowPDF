@@ -65,7 +65,7 @@ There are multiple in-terminal PDF viewers for the Kitty terminal but the main p
 ## Installation
 The project is easily built and installed using Cargo:
 ```sh
-$ cargo build --release && cargo install -path .
+$ cargo build --release && cargo install --path .
 ```
 
 Another method is to download the pre-compiled binaries [here](https://github.com/monoamine11231/meowpdf/releases/tag/v1.2.0).
