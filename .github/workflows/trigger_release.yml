@@ -1,0 +1,35 @@
+name: Trigger Release
+
+permissions:
+  contents: write
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version'     
+        required: true
+
+jobs:
+  make-bump-and-trigger-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: master
+          token: ${{secrets.ACTION_PAT}}
+      - run: |
+          VERSION="${{ github.event.inputs.version }}"
+          VERSION="${VERSION#v}"
+          echo "BUMP_VERSION=$VERSION" >> $GITHUB_ENV
+      - run: sed -i "/^\[package\]/,/^\[/{s/^version = \".*/version = \"$BUMP_VERSION\"/; t;}" Cargo.toml
+      - run: sed -i "s|\(/releases/tag/\)v[0-9.]*|\1v$BUMP_VERSION|" README.md
+      - run: sed -i "s|v[0-9.]*\.svg\([^)]*\)|v$BUMP_VERSION.svg\1|" README.md
+      - run: | 
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .
+          git commit -m "chore(bump): Bumped to ${{ github.event.inputs.version }}"
+          git push
+          git tag ${{ github.event.inputs.version }}
+          git push origin --tags
