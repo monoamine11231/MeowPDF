@@ -418,7 +418,9 @@ impl Viewer {
 
         let text = if link.uri.len() <= width {
             if link.uri.starts_with('#') {
-                format!("Page {}", link.page + 1)
+                let page_number =
+                    link.dest.as_ref().map(|d| d.loc.page_number).unwrap_or(0);
+                format!("Page {}", page_number + 1)
             } else {
                 link.uri.to_string()
             }

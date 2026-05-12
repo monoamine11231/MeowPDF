@@ -6,7 +6,7 @@ version = "1.2.2"
 [dependencies]
 base64 = "0.22.1"
 dirs = "5.0.1"
-mupdf = { default-features = false, version = "0.5" }
+mupdf = { default-features = false, version = "0.6" }
 notify = { version = "6.1.1" }
 serde = { version = "1.0.219", features = ["derive"] }
 toml = { features = ["parse", "display"], default-features = false, version = "0.8.22" }

@@ -265,7 +265,9 @@ fn main() {
             if current_mouse.kind.is_down() {
                 /* URI points to page in this document */
                 if link.uri.starts_with('#') {
-                    let _ = viewer.jump(link.page as usize);
+                    if let Some(destination) = &link.dest {
+                        let _ = viewer.jump(destination.loc.page_number as usize);
+                    }
                 } else {
                     let _ = open::that_detached(link.uri);
                 }
