@@ -93,7 +93,7 @@ One of the key-features of *MeowPDF* is it's high customizability. *MeowPDF* all
 - Keybindings
 - URI annotation bar
 
-The configuration TOML file is found in `~/.config/meowpdf`.
+The configuration TOML file is found in `~/.config/meowpdf` in linux systems and `~/Library/Application Support/meowpdf` in MacOS.
 
 #### Keybindings
 The default keybindings are listed bellow:

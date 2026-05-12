@@ -1,4 +1,7 @@
-use std::{collections::HashSet, mem::discriminant};
+use std::{
+    collections::{HashMap, HashSet},
+    mem::discriminant,
+};
 
 use toml::{Table, Value};
 
@@ -55,8 +58,73 @@ pub enum ConfigAction {
     Quit,
 }
 
-/* Remove old config variables, add new defaults if not existant */
-fn fix_config_toml(current: &mut toml::Table, default: &toml::Table) -> bool {
+fn fix_config_keybindings(
+    current: &mut toml::Table,
+    default: &toml::Table,
+) -> Result<bool, String> {
+    let mut current_reversed: HashMap<String, Vec<String>> = HashMap::new();
+    let mut default_reversed: HashMap<String, Vec<String>> = HashMap::new();
+    for (a, b) in current.into_iter() {
+        current_reversed
+            .entry(
+                b.as_str()
+                    .ok_or_else(|| "Keybinding isn't a string".to_string())?
+                    .to_owned(),
+            )
+            .or_default()
+            .push(a.as_str().to_owned());
+    }
+
+    for (a, b) in default {
+        default_reversed
+            .entry(
+                b.as_str()
+                    .ok_or_else(|| "Keybinding isn't a string".to_string())?
+                    .to_owned(),
+            )
+            .or_default()
+            .push(a.as_str().to_owned());
+    }
+
+    let mut config_has_changed = false;
+
+    let keys: HashSet<String> = current_reversed
+        .keys()
+        .chain(default_reversed.keys())
+        .cloned()
+        .collect();
+    for key in keys.into_iter() {
+        let key_in_current = current_reversed.contains_key(&key);
+        let key_in_default = default_reversed.contains_key(&key);
+
+        /* old key */
+        if key_in_current && !key_in_default {
+            for key_current in &current_reversed[&key] {
+                current.remove(key_current);
+            }
+            config_has_changed |= true;
+        /* new key */
+        } else if !key_in_current && key_in_default {
+            for key_default in &default_reversed[&key] {
+                /* Don't add default keybindings if the user has mapped them for other action*/
+                if current.contains_key(key_default) {
+                    continue;
+                }
+                current.insert(key_default.clone(), toml::Value::from(key.clone()));
+                config_has_changed |= true;
+            }
+        }
+    }
+
+    Ok(config_has_changed)
+}
+
+/* Remove old config variables, add new defaults if not existant; return true if config
+ * `current` has been modified */
+fn fix_config_toml(
+    current: &mut toml::Table,
+    default: &toml::Table,
+) -> Result<bool, String> {
     let mut config_has_changed = false;
 
     let keys: HashSet<String> = current.keys().chain(default.keys()).cloned().collect();
@@ -80,11 +148,16 @@ fn fix_config_toml(current: &mut toml::Table, default: &toml::Table) -> bool {
             (&mut current[&key], &default[&key])
         {
             /* If both were tables, check recursively */
-            config_has_changed |= fix_config_toml(current_rec, default_rec);
+            if key == "bindings" {
+                /* Special case */
+                config_has_changed |= fix_config_keybindings(current_rec, default_rec)?;
+            } else {
+                config_has_changed |= fix_config_toml(current_rec, default_rec)?;
+            }
         }
     }
 
-    config_has_changed
+    Ok(config_has_changed)
 }
 
 pub fn config_load_or_create() -> Result<Config, String> {
@@ -110,7 +183,7 @@ pub fn config_load_or_create() -> Result<Config, String> {
         })?;
 
         /* Check if the current config has been fixed, and if so just rewrite the old one */
-        if fix_config_toml(&mut current_config_toml, &default_config_toml) {
+        if fix_config_toml(&mut current_config_toml, &default_config_toml)? {
             let fixed_config_content = toml::to_string_pretty(&current_config_toml)
                 .map_err(|x| format!("Could not serialize toml to string: {}", x))?;
 
@@ -275,7 +348,9 @@ mod tests {
         let reference_config_toml = REFERENCE_CONFIG.parse::<Table>().unwrap();
 
         assert!(test_config_toml == reference_config_toml);
-        assert!(fix_config_toml(&mut test_config_toml, &reference_config_toml) == false);
+        assert!(
+            fix_config_toml(&mut test_config_toml, &reference_config_toml) == Ok(false)
+        );
         assert!(test_config_toml == reference_config_toml);
     }
 
@@ -396,16 +471,15 @@ mod tests {
 		"q" = "Quit"
 		"Q" = "Quit"
 
-		non_existent_4 = true
+		non_existent_4 = "true"
 		"#;
 
         let mut test_config_toml = TEST_CONFIG.parse::<Table>().unwrap();
         let reference_config_toml = REFERENCE_CONFIG.parse::<Table>().unwrap();
 
-        assert!(fix_config_toml(
-            &mut test_config_toml,
-            &reference_config_toml
-        ));
+        assert!(
+            fix_config_toml(&mut test_config_toml, &reference_config_toml) == Ok(true)
+        );
 
         /* [viewer] */
         assert!(test_config_toml.get("non_existent_1").is_none());
@@ -603,7 +677,7 @@ mod tests {
 		"q" = "Quit"
 		"Q" = "Quit"
 
-		"bbbb" = "Quit"
+		"bbbb" = "Quit2"
 		"#;
 
         const TEST_CONFIG: &str = r#"
@@ -664,10 +738,9 @@ mod tests {
         let mut test_config_toml = TEST_CONFIG.parse::<Table>().unwrap();
         let reference_config_toml = REFERENCE_CONFIG.parse::<Table>().unwrap();
 
-        assert!(fix_config_toml(
-            &mut test_config_toml,
-            &reference_config_toml
-        ));
+        assert!(
+            fix_config_toml(&mut test_config_toml, &reference_config_toml) == Ok(true)
+        );
 
         assert!(test_config_toml["show"] == Value::Boolean(true));
 
@@ -788,7 +861,6 @@ mod tests {
         );
         assert!(test_config_toml["bindings"]["q"] == Value::String("Quit".to_owned()));
         assert!(test_config_toml["bindings"]["Q"] == Value::String("Quit".to_owned()));
-        assert!(test_config_toml["bindings"]["bbbb"] == Value::String("Quit".to_owned()));
 
         assert!(
             test_config_toml["bindings"]
@@ -858,7 +930,7 @@ mod tests {
 		"Ctrl+b" = "PrevPage"
 		"Ctrl+f" = "NextPage"
 		"q" = "Quit"
-		"Q" = 2
+		"Q" = "Quit"
 		"#;
 
         const TEST_CONFIG: &str = r#"
@@ -919,10 +991,9 @@ mod tests {
         let mut test_config_toml = TEST_CONFIG.parse::<Table>().unwrap();
         let reference_config_toml = REFERENCE_CONFIG.parse::<Table>().unwrap();
 
-        assert!(fix_config_toml(
-            &mut test_config_toml,
-            &reference_config_toml
-        ));
+        assert!(
+            fix_config_toml(&mut test_config_toml, &reference_config_toml) == Ok(true)
+        );
 
         /* [viewer] */
         assert!(test_config_toml["viewer"]["scroll_speed"] == Value::Float(22.0));
@@ -1038,7 +1109,6 @@ mod tests {
                 == Value::String("NextPage".to_owned())
         );
         assert!(test_config_toml["bindings"]["q"] == Value::String("Quit".to_owned()));
-        assert!(test_config_toml["bindings"]["Q"] == Value::Integer(2));
 
         assert!(
             test_config_toml["bindings"]
@@ -1052,5 +1122,393 @@ mod tests {
                     .keys()
                     .collect::<Vec<_>>()
         );
+    }
+
+    #[test]
+    fn test_fix_bindings_removal_of_non_existent() {
+        const REFERENCE_BINDINGS_SINGLE: &str = r#"
+		"Ctrl+a" = "ToggleAlpha"
+		"Ctrl+o" = "ToggleInverse"
+		"C" = "CenterViewer"
+		"h" = "MoveLeft"
+		"j" = "MoveDown"
+		"k" = "MoveUp"
+		"l" = "MoveRight"
+		"Up" = "MoveUp"
+		"Left" = "MoveLeft"
+		"Right" = "MoveRight"
+		"Down" = "MoveDown"
+		"Plus" = "ZoomIn"
+		"-" = "ZoomOut"
+		"g g" = "JumpFirstPage"
+		"G" = "JumpLastPage"
+		"PageUp" = "PrevPage"
+		"PageDown" = "NextPage"
+		"Ctrl+b" = "PrevPage"
+		"Ctrl+f" = "NextPage"
+		"q" = "Quit"
+		"Q" = "Quit"
+		"#;
+
+        const TEST_BINDINGS_SINGLE: &str = r#"
+		"Ctrl+a" = "ToggleAlpha"
+		"Ctrl+o" = "ToggleInverse"
+		"C" = "CenterViewer"
+		"h" = "MoveLeft"
+		"j" = "MoveDown"
+		"k" = "MoveUp"
+		"l" = "MoveRight"
+		"Up" = "MoveUp"
+		"Left" = "MoveLeft"
+		"Right" = "MoveRight"
+		"Down" = "MoveDown"
+		"Plus" = "ZoomIn"
+		"-" = "ZoomOut"
+		"g g" = "JumpFirstPage"
+		"G" = "JumpLastPage"
+		"PageUp" = "PrevPage"
+		"PageDown" = "NextPage"
+		"Ctrl+b" = "PrevPage"
+		"Ctrl+f" = "NextPage"
+		"q" = "Quit"
+		"Q" = "Quit"
+
+		"OO" = "NonExistentAction"
+		"#;
+
+        let mut test_bindings_toml = TEST_BINDINGS_SINGLE.parse::<Table>().unwrap();
+        let reference_bindings_toml = REFERENCE_BINDINGS_SINGLE.parse::<Table>().unwrap();
+
+        assert!(
+            fix_config_keybindings(&mut test_bindings_toml, &reference_bindings_toml)
+                == Ok(true)
+        );
+
+        assert!(test_bindings_toml == reference_bindings_toml);
+
+        const REFERENCE_BINDINGS_MULTIPLE: &str = r#"
+		"Ctrl+a" = "ToggleAlpha"
+		"Ctrl+o" = "ToggleInverse"
+		"C" = "CenterViewer"
+		"h" = "MoveLeft"
+		"j" = "MoveDown"
+		"k" = "MoveUp"
+		"l" = "MoveRight"
+		"Up" = "MoveUp"
+		"Left" = "MoveLeft"
+		"Right" = "MoveRight"
+		"Down" = "MoveDown"
+		"Plus" = "ZoomIn"
+		"-" = "ZoomOut"
+		"g g" = "JumpFirstPage"
+		"G" = "JumpLastPage"
+		"PageUp" = "PrevPage"
+		"PageDown" = "NextPage"
+		"Ctrl+b" = "PrevPage"
+		"Ctrl+f" = "NextPage"
+		"q" = "Quit"
+		"Q" = "Quit"
+		"#;
+
+        const TEST_BINDINGS_MULTIPLE: &str = r#"
+		"Ctrl+a" = "ToggleAlpha"
+		"Ctrl+o" = "ToggleInverse"
+		"C" = "CenterViewer"
+		"h" = "MoveLeft"
+		"j" = "MoveDown"
+		"k" = "MoveUp"
+		"l" = "MoveRight"
+		"Up" = "MoveUp"
+		"Left" = "MoveLeft"
+		"Right" = "MoveRight"
+		"Down" = "MoveDown"
+		"Plus" = "ZoomIn"
+		"-" = "ZoomOut"
+		"g g" = "JumpFirstPage"
+		"G" = "JumpLastPage"
+		"PageUp" = "PrevPage"
+		"PageDown" = "NextPage"
+		"Ctrl+b" = "PrevPage"
+		"Ctrl+f" = "NextPage"
+		"q" = "Quit"
+		"Q" = "Quit"
+
+		"OO" = "NonExistentAction"
+		"AOOOO" = "NonExistentAction2"
+		"Ctrl+L" = "NonExistentAction3"
+		"#;
+
+        let mut test_bindings_toml = TEST_BINDINGS_MULTIPLE.parse::<Table>().unwrap();
+        let reference_bindings_toml =
+            REFERENCE_BINDINGS_MULTIPLE.parse::<Table>().unwrap();
+
+        assert!(
+            fix_config_keybindings(&mut test_bindings_toml, &reference_bindings_toml)
+                == Ok(true)
+        );
+
+        assert!(test_bindings_toml == reference_bindings_toml);
+    }
+
+    #[test]
+    fn test_fix_bindings_addition_of_new_and_previously_non_existent() {
+        const REFERENCE_BINDINGS_SINGLE: &str = r#"
+		"Ctrl+a" = "ToggleAlpha"
+		"Ctrl+o" = "ToggleInverse"
+		"C" = "CenterViewer"
+		"h" = "MoveLeft"
+		"j" = "MoveDown"
+		"k" = "MoveUp"
+		"l" = "MoveRight"
+		"Up" = "MoveUp"
+		"Left" = "MoveLeft"
+		"Right" = "MoveRight"
+		"Down" = "MoveDown"
+		"Plus" = "ZoomIn"
+		"-" = "ZoomOut"
+		"g g" = "JumpFirstPage"
+		"G" = "JumpLastPage"
+		"PageUp" = "PrevPage"
+		"PageDown" = "NextPage"
+		"Ctrl+b" = "PrevPage"
+		"Ctrl+f" = "NextPage"
+		"q" = "Quit"
+		"Q" = "Quit"
+
+		"U" = "NewAction"
+		"#;
+
+        const TEST_BINDINGS_SINGLE: &str = r#"
+		"Ctrl+a" = "ToggleAlpha"
+		"Ctrl+o" = "ToggleInverse"
+		"C" = "CenterViewer"
+		"h" = "MoveLeft"
+		"j" = "MoveDown"
+		"k" = "MoveUp"
+		"l" = "MoveRight"
+		"Up" = "MoveUp"
+		"Left" = "MoveLeft"
+		"Right" = "MoveRight"
+		"Down" = "MoveDown"
+		"Plus" = "ZoomIn"
+		"-" = "ZoomOut"
+		"g g" = "JumpFirstPage"
+		"G" = "JumpLastPage"
+		"PageUp" = "PrevPage"
+		"PageDown" = "NextPage"
+		"Ctrl+b" = "PrevPage"
+		"Ctrl+f" = "NextPage"
+		"q" = "Quit"
+		"Q" = "Quit"
+		"#;
+
+        let mut test_bindings_toml = TEST_BINDINGS_SINGLE.parse::<Table>().unwrap();
+        let reference_bindings_toml = REFERENCE_BINDINGS_SINGLE.parse::<Table>().unwrap();
+
+        assert!(
+            fix_config_keybindings(&mut test_bindings_toml, &reference_bindings_toml)
+                == Ok(true)
+        );
+
+        assert!(test_bindings_toml == reference_bindings_toml);
+
+        const REFERENCE_BINDINGS_MULTIPLE: &str = r#"
+		"Ctrl+a" = "ToggleAlpha"
+		"Ctrl+o" = "ToggleInverse"
+		"C" = "CenterViewer"
+		"h" = "MoveLeft"
+		"j" = "MoveDown"
+		"k" = "MoveUp"
+		"l" = "MoveRight"
+		"Up" = "MoveUp"
+		"Left" = "MoveLeft"
+		"Right" = "MoveRight"
+		"Down" = "MoveDown"
+		"Plus" = "ZoomIn"
+		"-" = "ZoomOut"
+		"g g" = "JumpFirstPage"
+		"G" = "JumpLastPage"
+		"PageUp" = "PrevPage"
+		"PageDown" = "NextPage"
+		"Ctrl+b" = "PrevPage"
+		"Ctrl+f" = "NextPage"
+		"q" = "Quit"
+		"Q" = "Quit"
+
+		"U" = "NewAction"
+		"UU" = "NewAction2"
+		"#;
+
+        const TEST_BINDINGS_MULTIPLE: &str = r#"
+		"Ctrl+a" = "ToggleAlpha"
+		"Ctrl+o" = "ToggleInverse"
+		"C" = "CenterViewer"
+		"h" = "MoveLeft"
+		"j" = "MoveDown"
+		"k" = "MoveUp"
+		"l" = "MoveRight"
+		"Up" = "MoveUp"
+		"Left" = "MoveLeft"
+		"Right" = "MoveRight"
+		"Down" = "MoveDown"
+		"Plus" = "ZoomIn"
+		"-" = "ZoomOut"
+		"g g" = "JumpFirstPage"
+		"G" = "JumpLastPage"
+		"PageUp" = "PrevPage"
+		"PageDown" = "NextPage"
+		"Ctrl+b" = "PrevPage"
+		"Ctrl+f" = "NextPage"
+		"q" = "Quit"
+		"Q" = "Quit"
+		"#;
+
+        let mut test_bindings_toml = TEST_BINDINGS_MULTIPLE.parse::<Table>().unwrap();
+        let reference_bindings_toml =
+            REFERENCE_BINDINGS_MULTIPLE.parse::<Table>().unwrap();
+
+        assert!(
+            fix_config_keybindings(&mut test_bindings_toml, &reference_bindings_toml)
+                == Ok(true)
+        );
+
+        assert!(test_bindings_toml == reference_bindings_toml);
+    }
+
+    #[test]
+    fn test_fix_bindings_addition_of_new_and_previously_existent() {
+        const REFERENCE_BINDINGS_SINGLE: &str = r#"
+		"Ctrl+a" = "ToggleAlpha"
+		"Ctrl+o" = "ToggleInverse"
+		"C" = "CenterViewer"
+		"h" = "MoveLeft"
+		"j" = "MoveDown"
+		"k" = "MoveUp"
+		"l" = "MoveRight"
+		"Up" = "MoveUp"
+		"Left" = "MoveLeft"
+		"Right" = "MoveRight"
+		"Down" = "MoveDown"
+		"Plus" = "ZoomIn"
+		"-" = "ZoomOut"
+		"g g" = "JumpFirstPage"
+		"G" = "JumpLastPage"
+		"PageUp" = "PrevPage"
+		"PageDown" = "NextPage"
+		"Ctrl+b" = "PrevPage"
+		"Ctrl+f" = "NextPage"
+		"q" = "Quit"
+		"Q" = "Quit"
+
+		"UUU" = "NewAction"
+		"UU" = "NewAction"
+		"U" = "NewAction"
+		"#;
+
+        const TEST_BINDINGS_SINGLE: &str = r#"
+		"Ctrl+a" = "ToggleAlpha"
+		"Ctrl+o" = "ToggleInverse"
+		"C" = "CenterViewer"
+		"h" = "MoveLeft"
+		"j" = "MoveDown"
+		"k" = "MoveUp"
+		"l" = "MoveRight"
+		"Up" = "MoveUp"
+		"Left" = "MoveLeft"
+		"Right" = "MoveRight"
+		"Down" = "MoveDown"
+		"Plus" = "ZoomIn"
+		"-" = "ZoomOut"
+		"g g" = "JumpFirstPage"
+		"G" = "JumpLastPage"
+		"PageUp" = "PrevPage"
+		"PageDown" = "NextPage"
+		"Ctrl+b" = "PrevPage"
+		"Ctrl+f" = "NextPage"
+		"q" = "Quit"
+		"Q" = "Quit"
+
+		"P" = "NewAction"
+		"#;
+
+        let mut test_bindings_toml = TEST_BINDINGS_SINGLE.parse::<Table>().unwrap();
+        let reference_bindings_toml = REFERENCE_BINDINGS_SINGLE.parse::<Table>().unwrap();
+
+        let old_test_bindings_toml = test_bindings_toml.clone();
+
+        assert!(
+            fix_config_keybindings(&mut test_bindings_toml, &reference_bindings_toml)
+                == Ok(false)
+        );
+
+        assert!(test_bindings_toml == old_test_bindings_toml);
+
+        const REFERENCE_BINDINGS_MULTIPLE: &str = r#"
+		"Ctrl+a" = "ToggleAlpha"
+		"Ctrl+o" = "ToggleInverse"
+		"C" = "CenterViewer"
+		"h" = "MoveLeft"
+		"j" = "MoveDown"
+		"k" = "MoveUp"
+		"l" = "MoveRight"
+		"Up" = "MoveUp"
+		"Left" = "MoveLeft"
+		"Right" = "MoveRight"
+		"Down" = "MoveDown"
+		"Plus" = "ZoomIn"
+		"-" = "ZoomOut"
+		"g g" = "JumpFirstPage"
+		"G" = "JumpLastPage"
+		"PageUp" = "PrevPage"
+		"PageDown" = "NextPage"
+		"Ctrl+b" = "PrevPage"
+		"Ctrl+f" = "NextPage"
+		"q" = "Quit"
+		"Q" = "Quit"
+
+		"UUU" = "NewAction"
+		"UU" = "NewAction"
+		"U" = "NewAction"
+		"#;
+
+        const TEST_BINDINGS_MULTIPLE: &str = r#"
+		"Ctrl+a" = "ToggleAlpha"
+		"Ctrl+o" = "ToggleInverse"
+		"C" = "CenterViewer"
+		"h" = "MoveLeft"
+		"j" = "MoveDown"
+		"k" = "MoveUp"
+		"l" = "MoveRight"
+		"Up" = "MoveUp"
+		"Left" = "MoveLeft"
+		"Right" = "MoveRight"
+		"Down" = "MoveDown"
+		"Plus" = "ZoomIn"
+		"-" = "ZoomOut"
+		"g g" = "JumpFirstPage"
+		"G" = "JumpLastPage"
+		"PageUp" = "PrevPage"
+		"PageDown" = "NextPage"
+		"Ctrl+b" = "PrevPage"
+		"Ctrl+f" = "NextPage"
+		"q" = "Quit"
+		"Q" = "Quit"
+
+		"P" = "NewAction"
+		"PO" = "NewAction"
+		"#;
+
+        let mut test_bindings_toml = TEST_BINDINGS_MULTIPLE.parse::<Table>().unwrap();
+        let reference_bindings_toml =
+            REFERENCE_BINDINGS_MULTIPLE.parse::<Table>().unwrap();
+
+        let old_test_bindings_toml = test_bindings_toml.clone();
+
+        assert!(
+            fix_config_keybindings(&mut test_bindings_toml, &reference_bindings_toml)
+                == Ok(false)
+        );
+
+        assert!(test_bindings_toml == old_test_bindings_toml);
     }
 }
